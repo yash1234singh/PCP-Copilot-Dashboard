@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: influxdb
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - ./logs/influxdb:/logs
+    command: >
+      sh -c "(/entrypoint.sh influxd 2>&1 | tee -a /logs/influxdb.log) &
+             while ! wget -q --spider http://localhost:8086/health 2>/dev/null; do sleep 1; done;
+             tail -f /logs/influxdb.log"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminadmin
+      - DOCKER_INFLUXDB_INIT_ORG=pcp-org
+      - DOCKER_INFLUXDB_INIT_BUCKET=pcp-metrics
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=pcp-admin-token-12345
+      - INFLUXDB_HTTP_AUTH_ENABLED=true
+    networks:
+      - pcp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=influxdb"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/config/grafana.ini:/etc/grafana/grafana.ini
+      - ./logs/grafana:/var/log/grafana
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_DISABLE_LOGIN_FORM=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION=false
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
+      - GF_INSTALL_PLUGINS=
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-pyroscope-app,grafana-exploretraces-app,grafana-metricsdrilldown-app,grafana-lokiexplore-app
+      - GF_LOG_MODE=file
+      - GF_LOG_LEVEL=info
+      - GF_PATHS_LOGS=/var/log/grafana
+      - GF_FEATURE_TOGGLES_ENABLE=
+      - GF_PLUGINS_ENABLE_ALPHA=false
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    networks:
+      - pcp-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=grafana"
+
+  pcp_parser:
+    build:
+      context: ./pcp_parser
+      dockerfile: Dockerfile
+    container_name: pcp_parser
+    volumes:
+      - .:/src
+    environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=pcp-admin-token-12345
+      - INFLUXDB_ORG=pcp-org
+      - INFLUXDB_BUCKET=pcp-metrics
+      - INFLUXDB_MEASUREMENT=pcp_metrics
+      - PCP_METRICS_FILTER=
+      - HOST_NAME=ABC
+      - HOST_NUM=123
+    depends_on:
+      - influxdb
+    networks:
+      - pcp-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=pcp_parser"
+
+networks:
+  pcp-network:
+    driver: bridge
+
+volumes:
+  influxdb-data:
+  grafana-data:
