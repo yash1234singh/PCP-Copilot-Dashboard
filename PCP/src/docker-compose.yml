@@ -88,9 +88,27 @@ services:
       - INFLUXDB_ORG=pcp-org
       - INFLUXDB_BUCKET=pcp-metrics
       - INFLUXDB_MEASUREMENT=pcp_metrics
-      - PCP_METRICS_FILTER=
-      - HOST_NAME=ABC
-      - HOST_NUM=123
+      # Value filtering (comma-separated: skip_zero, skip_empty, skip_none)
+      # WARNING: skip_zero may filter useful metrics! Use cautiously
+      - PCP_METRICS_FILTER=skip_empty,skip_none
+      - PRODUCT_TYPE=TEST_SERVER
+      - SERIAL_NUMBER=12345
+      # Performance tuning (higher = faster but more memory)
+      - VALIDATION_BATCH_SIZE=1000
+      - INFLUX_BATCH_SIZE=50000
+      - PROGRESS_LOG_INTERVAL=50
+      # Validation control
+      - SKIP_VALIDATION=false         # Skip validation entirely (NOT RECOMMENDED - causes 0 data points!)
+      - FORCE_REVALIDATE=false          # Force re-validation (ignore cache)
+      # Metric category filters (set to false to exclude that category)
+      - ENABLE_PROCESS_METRICS=false    # proc.* metrics (high cardinality, creates 10k+ columns)
+      - ENABLE_DISK_METRICS=true        # disk.* metrics
+      - ENABLE_FILE_METRICS=true        # vfs.* and filesys.* metrics
+      - ENABLE_MEMORY_METRICS=true      # mem.* metrics
+      - ENABLE_NETWORK_METRICS=true     # network.* metrics
+      - ENABLE_KERNEL_METRICS=true      # kernel.* metrics
+      - ENABLE_SWAP_METRICS=false       # swap.* metrics
+      - ENABLE_NFS_METRICS=false        # nfs.* metrics (often have PM_ERR_INDOM_LOG errors)
     depends_on:
       - influxdb
     networks:

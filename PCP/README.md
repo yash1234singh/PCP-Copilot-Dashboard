@@ -10,6 +10,8 @@ Automated system for processing PCP (Performance Co-Pilot) archive files and vis
 - [How It Works](#how-it-works)
 - [Quick Start](#quick-start)
 - [Usage](#usage)
+- [Dynamic Dashboard Generation](#dynamic-dashboard-generation)
+- [Performance Tuning](#performance-tuning)
 - [Monitoring](#monitoring)
 - [Troubleshooting](#troubleshooting)
 
@@ -23,24 +25,128 @@ This project provides a complete monitoring solution for PCP (Performance Co-Pil
 
 ## Architecture
 
-### Component Overview
+### System Overview
 
 ```
+┌──────────────────────────────────────────────────────────────────┐
+│                     PCP METRICS PIPELINE                          │
+└──────────────────────────────────────────────────────────────────┘
+
 ┌─────────────┐
-│  PCP Archive│
-│   (.tar.xz) │
+│ PCP Archive │  .tar.xz files from monitoring system
+│  (.tar.xz)  │
 └──────┬──────┘
        │
        ▼
-┌─────────────────┐      ┌──────────────┐      ┌──────────────┐
-│   PCP Parser    │─────▶│   InfluxDB   │─────▶│   Grafana    │
-│   Container     │      │   (Port 8086)│      │ (Port 3000)  │
-└─────────────────┘      └──────────────┘      └──────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    PCP PARSER CONTAINER                          │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │  1. ARCHIVE EXTRACTION                                  │    │
+│  │     - Watches /src/input/raw for .tar.xz files         │    │
+│  │     - Extracts to /tmp/pcp_archives                    │    │
+│  │     - Finds .meta file to locate PCP archive           │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │  2. METRIC DISCOVERY & VALIDATION                       │    │
+│  │     - pminfo: Discovers all metrics in archive         │    │
+│  │     - Batch validation (1000 metrics at a time)        │    │
+│  │     - Filters out invalid/derived metrics              │    │
+│  │     - Category filtering (process/disk/mem/etc)        │    │
+│  │     - Caches validated metrics for reuse               │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │  3. DATA EXTRACTION                                     │    │
+│  │     - pmrep: Exports validated metrics to CSV          │    │
+│  │     - Parses CSV with timestamp + metric columns       │    │
+│  │     - Applies value filters (skip empty/null)          │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │  4. INFLUXDB EXPORT                                     │    │
+│  │     - Async batch writes (50k points/batch)            │    │
+│  │     - Adds static tags (product_type, serialNumber)    │    │
+│  │     - Parallel processing with retry logic             │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │  5. ARCHIVE MANAGEMENT                                  │    │
+│  │     - Success: Removes processed archive               │    │
+│  │     - Failure: Moves to /src/archive/failed            │    │
+│  └────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
        │
        ▼
-┌─────────────────┐
-│  Logs & Archive │
-└─────────────────┘
+┌──────────────────┐      ┌──────────────────┐
+│    INFLUXDB      │      │   METRICS CSV    │
+│  Time-series DB  │      │  Tracking File   │
+│  (Port 8086)     │      │ metrics_labels   │
+└────────┬─────────┘      └──────────────────┘
+         │
+         ▼
+┌──────────────────┐      ┌──────────────────┐
+│     GRAFANA      │      │  AUTO DASHBOARD  │
+│  Visualization   │◄─────┤   GENERATOR      │
+│  (Port 3000)     │      │  Python script   │
+└──────────────────┘      └──────────────────┘
+```
+
+### Data Model
+
+**InfluxDB Structure:**
+```
+measurement: pcp_metrics
+├── tags
+│   ├── metric (metric name)
+│   ├── product_type (L5E)
+│   └── serialNumber (341100896)
+├── fields
+│   └── value (float)
+└── timestamp (nanoseconds)
+```
+
+### Processing Flow
+
+**Archive Processing Sequence:**
+```
+1. Archive arrives → /src/input/raw/20250915.tar.xz
+
+2. Extraction → /tmp/pcp_archives/20250915.tar/20250915.{meta,index,0}
+
+3. Discovery → pminfo -a <archive> → ~2000 raw metrics
+
+4. Validation → pmrep batch test → ~1870 valid metrics
+
+5. Filtering → Category filters → 300-1870 metrics (configurable)
+
+6. Caching → /src/logs/pcp_parser/validated_metrics.txt
+
+7. Export → pmrep CSV → InfluxDB points (async batches)
+
+8. Cleanup → Archive removed or moved to failed/
+```
+
+**Metric Validation Process:**
+```
+Input: ~2000 metrics from pminfo
+
+Step 1: Batch Test (1000 metrics at a time)
+├── pmrep -a <archive> -s 1 -o csv <1000 metrics>
+├── Success: All 1000 metrics valid
+└── Failure: Test each individually
+
+Step 2: Individual Test (for failed batches)
+├── pmrep -a <archive> -s 1 -o csv <single metric>
+├── Success: Add to valid list
+└── Failure: Filter out (PM_ERR_BADDERIVE, etc.)
+
+Step 3: Category Filtering
+├── ENABLE_PROCESS_METRICS=false → Remove proc.* (~10k columns)
+├── ENABLE_DISK_METRICS=true → Keep disk.*
+└── ... (7 category filters total)
+
+Output: 300-1870 validated metrics
 ```
 
 ### Containers
@@ -236,12 +342,51 @@ docker-compose down
 
 2. The parser will automatically:
    - Detect new files (polling every 10 seconds)
-   - Extract and process them
-   - Import metrics to InfluxDB
-   - Filter out zero/null values
-   - Track unique metrics in metrics_labels.csv
+   - Extract and validate metrics
+   - Apply category filters (process/disk/memory/etc)
+   - Export to InfluxDB with async batch writes
+   - Track metrics in metrics_labels.csv
    - **Delete** successfully processed archives
    - Move failed archives to `archive/failed/`
+
+### Key Commands
+
+**Monitor Processing:**
+```bash
+# Watch parser logs in real-time
+docker logs pcp-parser -f
+
+# Check validated metrics cache
+docker exec pcp-parser cat /src/logs/pcp_parser/validated_metrics.txt | wc -l
+
+# View all discovered metrics
+docker exec pcp-parser head -20 /src/logs/pcp_parser/metrics_labels.csv
+```
+
+**Regenerate Dashboard:**
+```bash
+cd src/grafana
+python generate_dashboard.py
+# Dashboard auto-reloads in Grafana within 30 seconds
+```
+
+**Force Cache Rebuild:**
+```yaml
+# In docker-compose.yml
+- FORCE_REVALIDATE=true  # Set to true
+# Then restart: docker-compose restart pcp-parser
+# Then set back to false after first run
+```
+
+**Manage Data:**
+```bash
+# Check InfluxDB data
+docker exec influxdb influx query 'from(bucket:"pcp-metrics") |> range(start:-1h) |> count()'
+
+# Clear all data (WARNING: Deletes everything!)
+docker-compose down -v
+docker-compose up -d
+```
 
 ### Viewing Dashboards
 
@@ -506,6 +651,223 @@ admin_password = your-new-password
 3. Place in `src/grafana/provisioning/dashboards/json/`
 4. Restart Grafana or wait 30 seconds for auto-reload
 
+## Dynamic Dashboard Generation
+
+The system includes an **auto-generated dashboard** that creates panels for all discovered metrics from your PCP archives.
+
+### Auto-Generated Dashboard
+
+**Location**: http://localhost:3000/d/pcp-auto-metrics/pcp-auto-generated-metrics-dashboard
+
+**Features**:
+- ✅ **Automatically includes ALL metrics** from `metrics_labels.csv`
+- ✅ **Hierarchical organization** by metric category (14 top-level groups)
+- ✅ **Collapsible rows** - clean interface, expand only what you need
+- ✅ **9,040+ metrics** organized into 1,043 panels
+- ✅ **Auto-updates** when new metrics are discovered
+
+**Structure**:
+```
+[DISK] - 4 subcategories, 310 metrics
+  [disk.all] (16 metrics)
+  [disk.dev] (46 metrics)
+  [disk.dm] (184 metrics)
+  [disk.partitions] (64 metrics)
+
+[KERNEL] - 3 subcategories, 147 metrics
+  [kernel.all] (28 metrics)
+  [kernel.cpu] (7 metrics)
+  [kernel.percpu] (112 metrics)
+
+[MEM] - 8 subcategories, 375 metrics
+[NETWORK] - 10 subcategories, 1154 metrics
+[PROC] - 4 subcategories, 6573 metrics
+[PSOC] - 4 subcategories, 312 metrics
+... and 8 more groups
+```
+
+### Regenerating the Dashboard
+
+If you want to update the dashboard with newly discovered metrics:
+
+```bash
+cd src/grafana
+python generate_dashboard.py
+```
+
+**Output**: `provisioning/dashboards/json/pcp-auto-dashboard.json`
+
+**When to regenerate**:
+- After processing new PCP archives with different metrics
+- When `metrics_labels.csv` has been updated
+- To reorganize or customize the dashboard structure
+
+**Dashboard will auto-reload** in Grafana within 30 seconds
+
+### Dashboard Generator Script
+
+The generator script (`src/grafana/generate_dashboard.py`) automatically:
+
+1. **Reads** `src/logs/pcp_parser/metrics_labels.csv`
+2. **Organizes** metrics hierarchically by prefix (disk.*, kernel.*, mem.*, etc.)
+3. **Creates** collapsible rows for each category
+4. **Generates** panels with up to 10 metrics each
+5. **Writes** dashboard JSON to provisioning directory
+
+**Customization**:
+- Edit `generate_dashboard.py` to change:
+  - Metrics per panel (default: 10)
+  - Panel layout (default: 2 panels per row)
+  - Time range (default: last 6 hours)
+  - Refresh interval (default: 30 seconds)
+
+See `src/grafana/DASHBOARD_README.md` for detailed documentation.
+
+## Performance Tuning
+
+The PCP parser includes configurable performance parameters for optimal processing speed.
+
+### Current Performance
+
+**Processing Speed** (with optimizations):
+- **First archive**: ~2.5 minutes (validation + export)
+- **Subsequent archives**: ~2 minutes (cached validation + export)
+
+**Speedup**: 2-5x faster than original implementation
+
+### Configuration Parameters
+
+All parameters are configurable via environment variables in `docker-compose.yml`:
+
+#### 1. FORCE_REVALIDATE (Validation Cache) ⚡
+**Default**: `false`
+
+Controls whether to use cached validated metrics or revalidate every time.
+
+```yaml
+- FORCE_REVALIDATE=false  # Use cache (fast)
+- FORCE_REVALIDATE=true   # Force revalidation (slower but thorough)
+```
+
+**How it works**:
+- **First archive**: Validates 1976 metrics, saves to cache (~50 seconds)
+- **Subsequent archives**: Loads from cache (~1 second) ⚡ **50 seconds faster**
+
+**Cache file**: `src/logs/pcp_parser/validated_metrics.txt` (1882 valid metrics)
+
+**When to force revalidation**:
+- After upgrading PCP version
+- When metrics change in your system
+- Troubleshooting validation issues
+
+#### 2. VALIDATION_BATCH_SIZE
+**Default**: `100`
+
+Number of metrics to validate together in each batch.
+
+```yaml
+- VALIDATION_BATCH_SIZE=100   # Standard (recommended)
+- VALIDATION_BATCH_SIZE=200   # Faster validation
+- VALIDATION_BATCH_SIZE=50    # More granular error detection
+```
+
+#### 3. INFLUX_BATCH_SIZE
+**Default**: `50000`
+
+Number of data points to accumulate before writing to InfluxDB.
+
+```yaml
+- INFLUX_BATCH_SIZE=50000    # Standard (recommended)
+- INFLUX_BATCH_SIZE=100000   # Faster, more memory
+- INFLUX_BATCH_SIZE=25000    # Slower, less memory
+```
+
+#### 4. PROGRESS_LOG_INTERVAL
+**Default**: `50`
+
+How often to log progress (every N batches).
+
+```yaml
+- PROGRESS_LOG_INTERVAL=50   # Standard (recommended)
+- PROGRESS_LOG_INTERVAL=100  # Less logging
+- PROGRESS_LOG_INTERVAL=10   # More detailed logging
+```
+
+### Example Configurations
+
+**High-Performance** (fast systems with 16GB+ RAM):
+```yaml
+- FORCE_REVALIDATE=false
+- VALIDATION_BATCH_SIZE=200
+- INFLUX_BATCH_SIZE=100000
+- PROGRESS_LOG_INTERVAL=100
+```
+
+**Standard** (balanced, recommended):
+```yaml
+- FORCE_REVALIDATE=false
+- VALIDATION_BATCH_SIZE=100
+- INFLUX_BATCH_SIZE=50000
+- PROGRESS_LOG_INTERVAL=50
+```
+
+**Low-Resource** (4GB RAM, slower CPU):
+```yaml
+- FORCE_REVALIDATE=false
+- VALIDATION_BATCH_SIZE=50
+- INFLUX_BATCH_SIZE=10000
+- PROGRESS_LOG_INTERVAL=25
+```
+
+### Performance Impact
+
+| Archive Size | Metrics | Data Points | Time (Optimized) |
+|-------------|---------|-------------|------------------|
+| 24 hours    | 1,875   | 4M points   | ~8-12 minutes    |
+| 7 days      | 1,875   | 28M points  | ~1 hour          |
+| 30 days     | 1,875   | 120M points | ~5 hours         |
+
+**Note**: Times assume `ENABLE_PROCESS_METRICS=false` (recommended). With process metrics enabled, processing can take 5-10x longer due to 10,000+ columns.
+
+### Metric Category Filters
+
+Control which metric categories to include/exclude for faster processing:
+
+```yaml
+# Metric category filters (set to false to exclude that category)
+- ENABLE_PROCESS_METRICS=false    # proc.* (⚠️ creates 10k+ columns if enabled!)
+- ENABLE_DISK_METRICS=true        # disk.* metrics
+- ENABLE_FILE_METRICS=true        # vfs.* and filesys.* metrics
+- ENABLE_MEMORY_METRICS=true      # mem.* metrics
+- ENABLE_NETWORK_METRICS=true     # network.* metrics
+- ENABLE_KERNEL_METRICS=true      # kernel.* metrics
+- ENABLE_SWAP_METRICS=true        # swap.* metrics
+```
+
+**When to disable categories**:
+- **Process metrics**: Always disable unless specifically needed (reduces 10k+ columns to ~300)
+- **Swap metrics**: Disable if system doesn't use swap
+- **Network metrics**: Disable if only monitoring local metrics
+
+**Cache rebuild required**: After changing filters, set `FORCE_REVALIDATE=true`, restart container, then set back to `false`.
+
+### Value Filtering
+
+Skip specific value types to reduce storage:
+
+```yaml
+# Value filtering (comma-separated: skip_zero, skip_empty, skip_none)
+- PCP_METRICS_FILTER=skip_empty,skip_none
+```
+
+**Options**:
+- `skip_zero`: Skip zero values (⚠️ WARNING: may filter useful metrics like idle time!)
+- `skip_empty`: Skip empty string values
+- `skip_none`: Skip null/none values
+
+**Recommended**: `skip_empty,skip_none` (without skip_zero)
+
+
 ## Maintenance
 
 ### Clean Up Old Logs
@@ -537,14 +899,237 @@ docker-compose up -d
 
 ## Documentation
 
+### Main Documentation
+- **README.md** (this file) - Complete setup and usage guide
 - **DIRECTORY_STRUCTURE.md** - Complete directory structure documentation
 - **FIXES_APPLIED.md** - Documented bug fixes and solutions
 - **docker-compose.yml** - Service configuration and orchestration
 
+### Performance & Optimization
+- **src/PERFORMANCE_TUNING.md** - Detailed performance tuning guide
+  - Validation caching
+  - Batch size optimization
+  - Configuration examples
+  - Troubleshooting performance issues
+
+### Dashboard Documentation
+- **src/grafana/DASHBOARD_README.md** - Auto-generated dashboard documentation
+  - Dashboard structure and organization
+  - Metrics hierarchy (14 groups, 83 subcategories, 9040+ metrics)
+  - How to regenerate dashboards
+  - Customization guide
+- **src/grafana/generate_dashboard.py** - Dashboard generator script
+
+### Key Files
+- **src/logs/pcp_parser/metrics_labels.csv** - All discovered non-zero metrics
+- **src/logs/pcp_parser/validated_metrics.txt** - Cached validated metrics (auto-generated)
+- **src/logs/pcp_parser/pcp_parser.log** - Real-time parser processing logs
+
+## Troubleshooting
+
+### Issue: 0 Data Points Written
+
+**Symptoms:**
+```
+Total data points written: 0
+Processed 0 lines from pmrep
+```
+
+**Causes & Solutions:**
+
+1. **SKIP_VALIDATION=true** (most common cause)
+   ```yaml
+   # In docker-compose.yml - NEVER enable this!
+   - SKIP_VALIDATION=false  # ✅ Correct
+   - SKIP_VALIDATION=true   # ❌ Causes 0 data points
+   ```
+
+2. **Overly aggressive value filtering**
+   ```yaml
+   # Remove skip_zero - it filters legitimate zero values
+   - PCP_METRICS_FILTER=skip_empty,skip_none  # ✅ Correct
+   - PCP_METRICS_FILTER=skip_zero,skip_empty  # ❌ May filter all data
+   ```
+
+3. **Old cache with wrong metrics**
+   ```bash
+   # Delete cache and rebuild
+   rm src/logs/pcp_parser/validated_metrics.txt
+   docker-compose restart pcp_parser
+   ```
+
+### Issue: Processing Takes 60+ Minutes Per Archive
+
+**Symptoms:**
+```
+Found 10896 columns (first column is timestamp)
+⏱️  TOTAL PROCESSING TIME: 65 minutes 14.31 seconds
+```
+
+**Cause**: Process metrics enabled (creates 10,000+ columns)
+
+**Solution**:
+```yaml
+# In docker-compose.yml
+- ENABLE_PROCESS_METRICS=false  # ✅ Reduces to ~3000 columns
+- FORCE_REVALIDATE=true         # Rebuild cache
+
+# Restart
+docker-compose restart pcp_parser
+
+# After first run, disable force revalidate
+- FORCE_REVALIDATE=false
+```
+
+**Expected improvement**: 65 minutes → 8-12 minutes (5-8x faster!)
+
+### Issue: PM_ERR_BADDERIVE or PM_ERR_INDOM_LOG Errors
+
+**Symptoms:**
+```
+pmrep stderr: Invalid metric disk.dev.d_await (PM_ERR_BADDERIVE)
+pmrep stderr: Invalid metric nfs.client.reqs (PM_ERR_INDOM_LOG)
+```
+
+**Explanation**: Normal - derived metrics or metrics with missing instance domains
+
+**Impact**: None - validation filters these out automatically
+
+**Action**: No action needed - these warnings are expected and handled
+
+### Issue: Cache Not Working (Always Revalidating)
+
+**Symptoms:**
+```
+No validation cache found, will validate metrics
+Found 1982 total metrics, validating each one...
+```
+
+**Solutions**:
+
+1. **Check FORCE_REVALIDATE setting**
+   ```yaml
+   - FORCE_REVALIDATE=false  # Should be false for cache usage
+   ```
+
+2. **Verify cache file exists**
+   ```bash
+   ls -la src/logs/pcp_parser/validated_metrics.txt
+   ```
+
+3. **Check file permissions**
+   ```bash
+   chmod 644 src/logs/pcp_parser/validated_metrics.txt
+   ```
+
+### Issue: High Memory Usage
+
+**Cause**: Batch sizes too large for available RAM
+
+**Solution**:
+```yaml
+# Reduce batch sizes
+- VALIDATION_BATCH_SIZE=50      # Down from 1000
+- INFLUX_BATCH_SIZE=10000       # Down from 50000
+```
+
+### Issue: Grafana Dashboard Not Showing Data
+
+**Checks**:
+
+1. **Verify InfluxDB has data**
+   ```bash
+   docker exec influxdb influx query 'from(bucket:"pcp-metrics") |> range(start:-1h) |> count()'
+   ```
+
+2. **Check datasource connection**
+   - Grafana → Configuration → Data Sources → InfluxDB
+   - Click "Test" button
+   - Should show "Data source is working"
+
+3. **Verify time range**
+   - Check dashboard time picker (top right)
+   - Ensure it covers the period when archives were processed
+
+4. **Check bucket name**
+   - Dashboard queries should use bucket: `pcp-metrics`
+   - Org: `pcp-org`
+
+### Issue: Container Won't Start
+
+**Check logs**:
+```bash
+docker-compose logs pcp_parser
+docker-compose logs influxdb
+docker-compose logs grafana
+```
+
+**Common fixes**:
+```bash
+# Port conflict - another service using 3000/8086
+docker-compose down
+# Change ports in docker-compose.yml if needed
+
+# Volume permission issues
+docker-compose down -v
+docker-compose up -d
+
+# Image pull issues
+docker-compose pull
+docker-compose up -d
+```
+
+### Issue: Archives Not Being Processed
+
+**Checks**:
+
+1. **Verify files in correct directory**
+   ```bash
+   ls -la src/input/raw/*.tar.xz
+   ```
+
+2. **Check parser is running**
+   ```bash
+   docker ps | grep pcp_parser
+   ```
+
+3. **Review parser logs**
+   ```bash
+   docker logs pcp_parser -f
+   ```
+
+4. **File permissions**
+   ```bash
+   chmod 644 src/input/raw/*.tar.xz
+   ```
+
+### Getting Help
+
+**Collect diagnostic information**:
+```bash
+# Collect all logs
+bash scripts/collect_logs.sh
+
+# Check system status
+docker-compose ps
+docker stats --no-stream
+
+# View recent parser activity
+docker logs pcp_parser --tail 100
+
+# Check validated metrics count
+wc -l src/logs/pcp_parser/validated_metrics.txt
+```
+
+**Log locations**:
+- Parser: `src/logs/pcp_parser/pcp_parser.log`
+- InfluxDB: `docker logs influxdb`
+- Grafana: `docker logs grafana`
+
 ## Support
 
 For issues or questions:
-1. Check the [Troubleshooting](#troubleshooting) section
+1. Check the [Troubleshooting](#troubleshooting) section above
 2. Review container logs: `bash scripts/collect_logs.sh`
 3. Verify all prerequisites are met
 4. Check Docker Desktop is running

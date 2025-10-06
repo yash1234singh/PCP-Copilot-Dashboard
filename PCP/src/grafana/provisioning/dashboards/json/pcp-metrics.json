@@ -49,11 +49,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"host_name\"] == \"${host_name}\")\n  |> filter(fn: (r) => r[\"host_num\"] == \"${host_num}\")\n  |> filter(fn: (r) => r[\"metric\"] =~ /^psoc\\.now\\.cpu\\./)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"metric\"], valueColumn: \"_value\")",
+          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"product_type\"] == \"${product_type}\")\n  |> filter(fn: (r) => r[\"serialNumber\"] == \"${serialNumber}\")\n  |> filter(fn: (r) => r[\"metric\"] =~ /^psoc\\.now\\.cpu\\./)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"metric\"], valueColumn: \"_value\")",
           "refId": "A"
         }
       ],
-      "title": "CPU Frequency - Product: ${host_name}, SN: ${host_num}",
+      "title": "CPU Frequency - Product: ${product_type}, SN: ${serialNumber}",
       "type": "timeseries"
     },
     {
@@ -96,7 +96,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"host_name\"] == \"${host_name}\")\n  |> filter(fn: (r) => r[\"host_num\"] == \"${host_num}\")\n  |> filter(fn: (r) => r[\"metric\"] =~ /^psoc\\.now\\.temp\\./)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"metric\"], valueColumn: \"_value\")",
+          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"product_type\"] == \"${product_type}\")\n  |> filter(fn: (r) => r[\"serialNumber\"] == \"${serialNumber}\")\n  |> filter(fn: (r) => r[\"metric\"] =~ /^psoc\\.now\\.temp\\./)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"metric\"], valueColumn: \"_value\")",
           "refId": "A"
         }
       ],
@@ -143,7 +143,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"host_name\"] == \"${host_name}\")\n  |> filter(fn: (r) => r[\"host_num\"] == \"${host_num}\")\n  |> filter(fn: (r) => r[\"metric\"] =~ /^psoc\\.now\\.vltg\\./)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"metric\"], valueColumn: \"_value\")",
+          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"product_type\"] == \"${product_type}\")\n  |> filter(fn: (r) => r[\"serialNumber\"] == \"${serialNumber}\")\n  |> filter(fn: (r) => r[\"metric\"] =~ /^psoc\\.now\\.vltg\\./)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"metric\"], valueColumn: \"_value\")",
           "refId": "A"
         }
       ],
@@ -190,7 +190,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"host_name\"] == \"${host_name}\")\n  |> filter(fn: (r) => r[\"host_num\"] == \"${host_num}\")\n  |> filter(fn: (r) => r[\"metric\"] =~ /^psoc\\.now\\.cur\\./)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"metric\"], valueColumn: \"_value\")",
+          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"product_type\"] == \"${product_type}\")\n  |> filter(fn: (r) => r[\"serialNumber\"] == \"${serialNumber}\")\n  |> filter(fn: (r) => r[\"metric\"] =~ /^psoc\\.now\\.cur\\./)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"metric\"], valueColumn: \"_value\")",
           "refId": "A"
         }
       ],
@@ -237,7 +237,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"host_name\"] == \"${host_name}\")\n  |> filter(fn: (r) => r[\"host_num\"] == \"${host_num}\")\n  |> filter(fn: (r) => r[\"metric\"] == \"psoc.now.fan.rpm\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"product_type\"] == \"${product_type}\")\n  |> filter(fn: (r) => r[\"serialNumber\"] == \"${serialNumber}\")\n  |> filter(fn: (r) => r[\"metric\"] == \"psoc.now.fan.rpm\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
         }
       ],
@@ -286,7 +286,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"host_name\"] == \"${host_name}\")\n  |> filter(fn: (r) => r[\"host_num\"] == \"${host_num}\")\n  |> filter(fn: (r) => r[\"metric\"] == \"psoc.now.fan.duty\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"product_type\"] == \"${product_type}\")\n  |> filter(fn: (r) => r[\"serialNumber\"] == \"${serialNumber}\")\n  |> filter(fn: (r) => r[\"metric\"] == \"psoc.now.fan.duty\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
         }
       ],
@@ -333,7 +333,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"host_name\"] == \"${host_name}\")\n  |> filter(fn: (r) => r[\"host_num\"] == \"${host_num}\")\n  |> filter(fn: (r) => r[\"metric\"] =~ /heater/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"metric\"], valueColumn: \"_value\")",
+          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"product_type\"] == \"${product_type}\")\n  |> filter(fn: (r) => r[\"serialNumber\"] == \"${serialNumber}\")\n  |> filter(fn: (r) => r[\"metric\"] =~ /heater/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"metric\"], valueColumn: \"_value\")",
           "refId": "A"
         }
       ],
@@ -380,7 +380,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"host_name\"] == \"${host_name}\")\n  |> filter(fn: (r) => r[\"host_num\"] == \"${host_num}\")\n  |> filter(fn: (r) => r[\"metric\"] =~ /^psoc\\.now\\.status\\./)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"metric\"], valueColumn: \"_value\")",
+          "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"_field\"] == \"value\")\n  |> filter(fn: (r) => r[\"product_type\"] == \"${product_type}\")\n  |> filter(fn: (r) => r[\"serialNumber\"] == \"${serialNumber}\")\n  |> filter(fn: (r) => r[\"metric\"] =~ /^psoc\\.now\\.status\\./)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"metric\"], valueColumn: \"_value\")",
           "refId": "A"
         }
       ],
@@ -404,14 +404,14 @@
           "type": "influxdb",
           "uid": "influxdb"
         },
-        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(\n  bucket: \"pcp-metrics\",\n  tag: \"host_name\",\n  predicate: (r) => r._measurement == \"pcp_metrics\",\n  start: -30d\n)",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(\n  bucket: \"pcp-metrics\",\n  tag: \"product_type\",\n  predicate: (r) => r._measurement == \"pcp_metrics\",\n  start: -30d\n)",
         "hide": 0,
         "includeAll": false,
         "label": "Product Type",
         "multi": false,
-        "name": "host_name",
+        "name": "product_type",
         "options": [],
-        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(\n  bucket: \"pcp-metrics\",\n  tag: \"host_name\",\n  predicate: (r) => r._measurement == \"pcp_metrics\",\n  start: -30d\n)",
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(\n  bucket: \"pcp-metrics\",\n  tag: \"product_type\",\n  predicate: (r) => r._measurement == \"pcp_metrics\",\n  start: -30d\n)",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
@@ -428,14 +428,14 @@
           "type": "influxdb",
           "uid": "influxdb"
         },
-        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(\n  bucket: \"pcp-metrics\",\n  tag: \"host_num\",\n  predicate: (r) => r._measurement == \"pcp_metrics\" and r.host_name == \"${host_name}\",\n  start: -30d\n)",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(\n  bucket: \"pcp-metrics\",\n  tag: \"serialNumber\",\n  predicate: (r) => r._measurement == \"pcp_metrics\" and r.product_type == \"${product_type}\",\n  start: -30d\n)",
         "hide": 0,
         "includeAll": false,
         "label": "Serial Number",
         "multi": false,
-        "name": "host_num",
+        "name": "serialNumber",
         "options": [],
-        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(\n  bucket: \"pcp-metrics\",\n  tag: \"host_num\",\n  predicate: (r) => r._measurement == \"pcp_metrics\" and r.host_name == \"${host_name}\",\n  start: -30d\n)",
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(\n  bucket: \"pcp-metrics\",\n  tag: \"serialNumber\",\n  predicate: (r) => r._measurement == \"pcp_metrics\" and r.product_type == \"${product_type}\",\n  start: -30d\n)",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
