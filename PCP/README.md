@@ -9,6 +9,7 @@ Automated system for processing PCP (Performance Co-Pilot) archive files and vis
 - [Directory Structure](#directory-structure)
 - [How It Works](#how-it-works)
 - [Quick Start](#quick-start)
+- [Web Control Panel](#web-control-panel)
 - [Usage](#usage)
 - [Dynamic Dashboard Generation](#dynamic-dashboard-generation)
 - [Performance Tuning](#performance-tuning)
@@ -94,17 +95,25 @@ This project provides a complete monitoring solution for PCP (Performance Co-Pil
 
 ### Data Model
 
-**InfluxDB Structure:**
+**InfluxDB Structure (Field-Based):**
 ```
 measurement: pcp_metrics
 ├── tags
-│   ├── metric (metric name)
-│   ├── product_type (L5E)
-│   └── serialNumber (341100896)
+│   ├── product_type (filterable, configurable via web UI)
+│   └── serialNumber (filterable, configurable via web UI)
 ├── fields
-│   └── value (float)
+│   ├── kernel_all_cpu_idle (float)
+│   ├── kernel_all_cpu_user (float)
+│   ├── mem_util_free (float)
+│   └── ... (all metrics as separate fields)
 └── timestamp (nanoseconds)
 ```
+
+**Benefits of Field-Based Model:**
+- **Low Cardinality** - Only 2 tags instead of 1 tag per metric
+- **Better Performance** - Single point per timestamp instead of thousands
+- **Easier Queries** - Field regex matching (`r["_field"] =~ /pattern/`)
+- **Scalable** - Supports thousands of metrics efficiently
 
 ### Processing Flow
 
@@ -169,7 +178,16 @@ Output: 300-1870 validated metrics
    - Processes PCP archives from input directory
    - Extracts metrics using PCP tools
    - Exports to InfluxDB using Flux protocol
+   - Trigger-based processing (manual start via web UI)
+   - Field-based data model for optimal performance
    - Automatic archive management (processed/failed)
+
+4. **Web Control Panel** (`web_pcp_ctrl`)
+   - Flask-based web interface
+   - Port: 5000 (http://localhost:5000)
+   - File upload, management, and processing control
+   - Live log and CSV viewing
+   - Configuration management
 
 ## Prerequisites
 
@@ -185,11 +203,17 @@ Output: 300-1870 validated metrics
 PCP/
 ├── src/                              # All source code, data, and orchestration
 │   ├── docker-compose.yml            # ⭐ Main orchestration file
+│   ├── .env                          # Environment variables (PRODUCT_TYPE, SERIAL_NUMBER)
 │   │
 │   ├── pcp_parser/                   # PCP Parser container code
 │   │   ├── Dockerfile                # Parser container build file
-│   │   ├── pcp_parser.py             # Main Python parser script
-│   │   └── process-pcp-archive.sh    # Bash processing script
+│   │   └── pcp_parser.py             # Main Python parser script (trigger-based)
+│   │
+│   ├── web_pcp_ctrl/                 # Web Control Panel container
+│   │   ├── Dockerfile                # Web UI container build file
+│   │   ├── app.py                    # Flask backend API
+│   │   └── templates/
+│   │       └── index.html            # Web UI frontend
 │   │
 │   ├── influxdb/                     # InfluxDB configuration (optional)
 │   │   ├── config/                   # Custom config files
@@ -197,16 +221,19 @@ PCP/
 │   │   └── README.md                 # InfluxDB setup guide
 │   │
 │   ├── grafana/                      # Grafana provisioning
+│   │   ├── generate_dashboard.py     # ⭐ Dashboard generator script
+│   │   ├── DASHBOARD_README.md       # Dashboard documentation
 │   │   └── provisioning/
 │   │       ├── datasources/          # InfluxDB datasource config
 │   │       │   └── influxdb.yml
 │   │       └── dashboards/           # Dashboard provisioning
 │   │           ├── dashboard.yml
-│   │           ├── json/             # Dashboard JSON files
-│   │           └── json_disabled/    # Temporarily disabled dashboards
+│   │           └── json/             # Dashboard JSON files
+│   │               ├── pcp-metrics.json         # Manual dashboard
+│   │               └── pcp-auto-dashboard.json  # Auto-generated dashboard
 │   │
 │   ├── input/                        # Input directory
-│   │   └── raw/                      # ⭐ Place .tar.xz files here
+│   │   └── raw/                      # ⭐ Place .tar.xz files here (or upload via web UI)
 │   │
 │   ├── archive/                      # Archive management
 │   │   ├── processed/                # Successfully processed archives
@@ -216,6 +243,10 @@ PCP/
 │       ├── grafana/
 │       ├── influxdb/
 │       └── pcp_parser/
+│           ├── pcp_parser.log        # Parser logs
+│           ├── metrics_labels.csv    # Discovered metrics
+│           ├── validated_metrics.txt # Cached validation
+│           └── pmrep_output_*.csv    # CSV output per archive
 │
 ├── scripts/                          # Management utility scripts
 │   ├── collect_logs.sh               # Collect all container logs
@@ -234,18 +265,21 @@ PCP/
 
 1. **Input**: Place PCP archive files (`.tar.xz`) in `src/input/raw/`
 
-2. **Detection**: PCP Parser polls the input directory every 10 seconds
+2. **Trigger**: Click "Process All Files" in web interface (creates `.process_trigger` file)
 
-3. **Processing**:
+3. **Detection**: PCP Parser detects trigger file every 2 seconds
+
+4. **Processing**:
    - Extracts `.tar.xz` archive
-   - Validates PCP archive structure
-   - Converts PCP metrics to InfluxDB line protocol
-   - Writes data to InfluxDB using Flux
+   - Validates PCP archive structure using cached metrics
+   - Converts PCP metrics to field-based InfluxDB format
+   - Saves CSV output for debugging
+   - Writes data to InfluxDB using Flux protocol
 
 4. **Archival**:
-   - **Success**: **DELETES** archive file after successful processing
+   - **Success**: Moves archive to `src/archive/processed/`
    - **Failure**: Moves archive to `src/archive/failed/`
-   - **Note**: The `processed/` folder exists but is **NOT currently used** by the code
+   - **CSV Output**: Saves pmrep output to `src/logs/pcp_parser/pmrep_output_*.csv`
    - Logs all operations with timestamps
 
 5. **Visualization**: Grafana queries InfluxDB and displays dashboards
@@ -256,8 +290,10 @@ PCP/
 - Built on Ubuntu 22.04 with PCP tools
 - Python 3 with influxdb-client library
 - Runs `pcp_parser.py` as main process
-- Watches `/src/input/raw/` for new archives
+- **Trigger-based processing** - waits for `.process_trigger` file
 - Processes archives sequentially to avoid conflicts
+- **Field-based data model** - all metrics as fields in single point
+- **No timeout logs** - stderr suppressed from pmrep command
 
 **Supported Metrics** (PSOC System):
 - CPU frequency (8 cores: cpu0-cpu7)
@@ -321,6 +357,12 @@ docker-compose down
 
 ### Accessing Services
 
+- **Web Control Panel**: http://localhost:5000
+  - Upload and manage PCP archives
+  - Trigger processing manually
+  - View logs and CSV files
+  - **Configure data tagging** - set product type and serial number (required before processing)
+
 - **Grafana**: http://localhost:3000
   - Username: `admin`
   - Password: `admin`
@@ -331,23 +373,82 @@ docker-compose down
   - Org: `pcp-org`
   - Token: `pcp-admin-token-12345`
 
+## Web Control Panel
+
+The web interface at http://localhost:5000 provides a comprehensive control panel for managing PCP archive processing.
+
+### Features
+
+#### File Management
+- **Upload** PCP archive files (.tar.xz) via drag-and-drop or file picker
+- **View** files in Input, Processed, and Failed directories
+- **Delete** individual files or clear entire directories
+- **Statistics** dashboard showing file counts across all directories
+
+#### Processing Control
+- **Manual Trigger** - Click "Process All Files" button to start processing
+- **Status Monitoring** - Real-time processing status with live updates
+- **Automatic Archive Management** - Files moved to `archive/processed` or `archive/failed`
+- **No Automatic Loop** - Processing only starts when button is clicked
+
+#### Log Management
+- **View Logs** - Click "Watch" to view log files in browser with terminal-style display
+- **Live Updates** - Toggle live log streaming (refreshes every 2 seconds)
+- **Download** - Download log files for offline viewing
+- **Clear Logs** - Bulk delete log files
+
+#### CSV Management
+- **View CSV** - View CSV files directly in browser
+- **Download CSV** - Download CSV files containing raw pmrep output
+- **Clear CSV** - Bulk delete CSV files
+- CSV files contain complete pmrep output for each processed archive
+
+#### Configuration Management
+- **Product Type** - Set product type for data tagging (default: SERVER1, required field)
+- **Serial Number** - Set serial number for data tagging (default: 1234, required field)
+- **⚠️ Important**: Configuration must be set **before** processing archives
+- All processed data is tagged with these values
+- Changes written to `.env` file and automatically applied
+- Web UI automatically restarts pcp_parser container when config is updated (~10 seconds)
+
+### Data Flow with Web Control Panel
+
+```
+1. Upload .tar.xz → Web UI → /src/input/raw/
+2. Click "Process All Files" → Creates .process_trigger file
+3. pcp_parser detects trigger → Starts processing
+4. Extract metrics → pmrep command → CSV output
+5. Write to InfluxDB → Field-based data model
+6. Save CSV → /src/logs/pcp_parser/pmrep_output_*.csv
+7. Move archive → /src/archive/processed/ or /src/archive/failed/
+8. View results → Grafana dashboards → http://localhost:3000
+```
+
 ## Usage
 
 ### Adding PCP Archives
 
+**Method 1: Web Interface (Recommended)**
+1. Open http://localhost:5000
+2. Drag and drop `.tar.xz` files onto the upload area
+3. Click "Process All Files" to start processing
+4. Monitor progress in real-time
+
+**Method 2: Manual Copy**
 1. Place your `.tar.xz` PCP archive files in:
    ```
    src/input/raw/
    ```
+2. Click "Process All Files" in web interface
 
-2. The parser will automatically:
-   - Detect new files (polling every 10 seconds)
-   - Extract and validate metrics
-   - Apply category filters (process/disk/memory/etc)
-   - Export to InfluxDB with async batch writes
-   - Track metrics in metrics_labels.csv
-   - **Delete** successfully processed archives
-   - Move failed archives to `archive/failed/`
+The parser will:
+- Extract and validate metrics using cached validation
+- Apply category filters (process/disk/memory/etc)
+- Export to InfluxDB with async batch writes (field-based model)
+- Save CSV files to logs directory
+- Track metrics in metrics_labels.csv
+- **Move** successfully processed archives to `archive/processed/`
+- Move failed archives to `archive/failed/`
 
 ### Key Commands
 
@@ -484,6 +585,13 @@ wc -l src/logs/pcp_parser/metrics_labels.csv
 
 ### Checking Processing Status
 
+**Method 1: Web Interface (Recommended)**
+- Open http://localhost:5000
+- View file statistics
+- Click "Watch" on log files for live viewing
+- Monitor processing status in real-time
+
+**Method 2: Command Line**
 ```bash
 # View parser logs (live)
 tail -f src/logs/pcp_parser/pcp_parser.log
@@ -491,10 +599,14 @@ tail -f src/logs/pcp_parser/pcp_parser.log
 # View container logs
 docker logs pcp_parser
 
+# Check processed archives
+ls -la src/archive/processed/
+
 # Check failed archives
 ls -la src/archive/failed/
 
-# Note: Successful archives are deleted, not moved to processed/
+# View CSV output
+ls -la src/logs/pcp_parser/pmrep_output_*.csv
 ```
 
 ## Monitoring
@@ -532,6 +644,50 @@ The InfluxDB datasource is auto-provisioned with:
 - Organization: `pcp-org`
 - Default Bucket: `pcp-metrics`
 - Token: `pcp-admin-token-12345`
+
+## Recent Fixes
+
+### Fixed: Duplicate Logging (2025-01-13)
+**Issue**: All log messages appeared 3 times in pcp_parser logs
+
+**Cause**: `setup_logging()` function was called multiple times, each time adding new handlers to the root logger without clearing old ones
+
+**Solution**: Added `logger.handlers.clear()` before adding new handlers in `setup_logging()` function
+
+### Fixed: Configuration Not Being Used (2025-01-13)
+**Issue**: Parser using default values (SERVER1/1234) instead of web UI configured values, even after container restart
+
+**Cause**:
+- Python script copied into container at build time, not runtime
+- Configuration was read from environment variables at container startup, not from dynamically updated .env file
+
+**Solution**:
+1. Created `load_config_from_env_file()` function that reads from `/src/.env` file
+2. Called this function in both `main()` and `process_all_archives()` to load config dynamically
+3. Added logging to show what tags are being used: "DATA TAGGING CONFIGURATION"
+4. **Important**: Container must be rebuilt (not just restarted) when Python code changes
+
+**How to Apply Config Changes**:
+```bash
+# Option 1: Use web UI (recommended)
+- Update config in web UI
+- Click "Update Configuration"
+- Web UI automatically rebuilds and restarts pcp_parser container
+
+# Option 2: Manual rebuild
+cd src
+docker-compose build pcp_parser
+docker-compose up -d pcp_parser
+```
+
+### Fixed: Grafana Variables Not Working (2025-01-13)
+**Issue**: Dashboard variables showing errors or not populating from InfluxDB
+
+**Solution**: Updated variable queries to use `v1.tagValues()` format:
+```flux
+import "influxdata/influxdb/v1"
+v1.tagValues(bucket: "pcp-metrics", tag: "product_type", start: -30d)
+```
 
 ## Troubleshooting
 
@@ -661,10 +817,11 @@ The system includes an **auto-generated dashboard** that creates panels for all 
 
 **Features**:
 - ✅ **Automatically includes ALL metrics** from `metrics_labels.csv`
-- ✅ **Hierarchical organization** by metric category (14 top-level groups)
+- ✅ **Hierarchical organization** by metric category (12 top-level groups)
 - ✅ **Collapsible rows** - clean interface, expand only what you need
-- ✅ **9,040+ metrics** organized into 1,043 panels
-- ✅ **Auto-updates** when new metrics are discovered
+- ✅ **2,652 metrics** organized into 74 subcategories
+- ✅ **Field-based queries** with ANY/ANY default filters
+- ✅ **Auto-updates** when dashboard is regenerated
 
 **Structure**:
 ```
@@ -680,11 +837,17 @@ The system includes an **auto-generated dashboard** that creates panels for all 
   [kernel.percpu] (112 metrics)
 
 [MEM] - 8 subcategories, 375 metrics
-[NETWORK] - 10 subcategories, 1154 metrics
-[PROC] - 4 subcategories, 6573 metrics
+[NETWORK] - 10 subcategories, 1315 metrics
 [PSOC] - 4 subcategories, 312 metrics
-... and 8 more groups
+... and 6 more groups (filesys, hinv, ipc, swapdev, vfs, xfs)
 ```
+
+**Dashboard Variables**:
+- **product_type**: Default "All" - dynamically populated from InfluxDB tags
+- **serialNumber**: Default "All" - dynamically populated from InfluxDB tags
+- Variables auto-discover unique values from your data
+- Queries use regex matching (=~) to support "All" option
+- Select specific values to filter dashboard data
 
 ### Regenerating the Dashboard
 
@@ -720,6 +883,9 @@ The generator script (`src/grafana/generate_dashboard.py`) automatically:
   - Panel layout (default: 2 panels per row)
   - Time range (default: last 6 hours)
   - Refresh interval (default: 30 seconds)
+  - Template variable defaults (currently: ANY/ANY)
+
+**Note**: Dashboard uses field-based queries with proper regex syntax (no escaped underscores).
 
 See `src/grafana/DASHBOARD_README.md` for detailed documentation.
 

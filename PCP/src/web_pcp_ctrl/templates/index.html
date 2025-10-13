@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PCP Control Panel</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .upload-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-area:hover {
+            background: #f8f9ff;
+            border-color: #764ba2;
+        }
+
+        .upload-area.dragover {
+            background: #f0f0ff;
+            border-color: #764ba2;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .btn-small {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
+        .section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .section-title {
+            font-size: 1.5em;
+            color: #333;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background: #f8f9ff;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: #f8f9ff;
+        }
+
+        .empty-message {
+            text-align: center;
+            color: #999;
+            padding: 40px;
+            font-style: italic;
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .refresh-btn {
+            background: #3498db;
+            margin-left: 10px;
+        }
+
+        .refresh-btn:hover {
+            background: #2980b9;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        @media (max-width: 768px) {
+            .config-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            overflow: auto;
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 2% auto;
+            padding: 0;
+            width: 90%;
+            max-width: 1200px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px 10px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.5em;
+        }
+
+        .close-btn {
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            line-height: 30px;
+            text-align: center;
+        }
+
+        .close-btn:hover {
+            opacity: 0.7;
+        }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .log-content {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .log-controls {
+            padding: 15px 20px;
+            background: #f8f9ff;
+            border-top: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .btn-watch {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-watch:hover {
+            background: #229954;
+        }
+
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            color: #27ae60;
+            font-weight: bold;
+        }
+
+        .live-dot {
+            width: 10px;
+            height: 10px;
+            background: #27ae60;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PCP Control Panel</h1>
+
+        <div class="stats" id="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="stat-input">-</div>
+                <div class="stat-label">Input Files</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="stat-processed">-</div>
+                <div class="stat-label">Processed Files</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="stat-failed">-</div>
+                <div class="stat-label">Failed Files</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="stat-logs">-</div>
+                <div class="stat-label">Log Files</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="stat-csv">-</div>
+                <div class="stat-label">CSV Files</div>
+            </div>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div class="upload-section">
+            <h2 style="margin-bottom: 20px; color: #333;">Configuration</h2>
+            <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin-bottom: 20px; border-radius: 4px;">
+                <strong>⚠️ Important:</strong> Set the correct Product Type and Serial Number <strong>before</strong> processing archives.
+                All processed data will be tagged with these values. Update will automatically restart pcp_parser container (please wait ~10 seconds).
+            </div>
+            <div class="config-grid">
+                <div class="form-group">
+                    <label for="productType">Product Type <span style="color: red;">*</span></label>
+                    <input type="text" id="productType" placeholder="e.g., SERVER1, L5E, TEST_SERVER" required>
+                </div>
+                <div class="form-group">
+                    <label for="serialNumber">Serial Number <span style="color: red;">*</span></label>
+                    <input type="text" id="serialNumber" placeholder="e.g., 1234, 341100896, SN001" required>
+                </div>
+            </div>
+            <button class="btn" onclick="updateConfig()">Update Configuration & Restart Parser</button>
+        </div>
+
+        <div class="upload-section">
+            <h2 style="margin-bottom: 20px; color: #333;">Process Archives</h2>
+            <div style="text-align: center; margin-bottom: 30px;">
+                <button class="btn" id="processBtn" onclick="startProcessing()" style="font-size: 18px; padding: 15px 40px;">
+                    <span id="processBtnText">Process All Files</span>
+                </button>
+                <p style="margin-top: 15px; color: #666; font-size: 14px;">
+                    Click to process all .tar.xz files in the input directory
+                </p>
+                <div id="processingStatus" style="margin-top: 15px; display: none;">
+                    <div class="loading"></div>
+                    <p style="color: #667eea; font-weight: bold; margin-top: 10px;">Processing in progress...</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="upload-section">
+            <h2 style="margin-bottom: 20px; color: #333;">Upload PCP Archive</h2>
+            <div class="upload-area" id="uploadArea">
+                <p style="font-size: 1.2em; margin-bottom: 10px;">Drop files here or click to browse</p>
+                <p style="color: #666; margin-bottom: 20px;">Supported: .tar.xz, .tar, .xz files</p>
+                <button class="btn" onclick="document.getElementById('fileInput').click()">
+                    Select Files
+                </button>
+                <input type="file" id="fileInput" multiple accept=".tar.xz,.tar,.xz">
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2 class="section-title">Input Files</h2>
+                <div>
+                    <button class="btn btn-small btn-danger" onclick="clearInput()">Clear All</button>
+                    <button class="btn btn-small refresh-btn" onclick="loadInputFiles()">Refresh</button>
+                </div>
+            </div>
+            <div id="inputFiles"></div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2 class="section-title">Processed Files</h2>
+                <div>
+                    <button class="btn btn-small btn-danger" onclick="clearProcessed()">Clear All</button>
+                    <button class="btn btn-small refresh-btn" onclick="loadProcessedFiles()">Refresh</button>
+                </div>
+            </div>
+            <div id="processedFiles"></div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2 class="section-title">Failed Files</h2>
+                <button class="btn btn-small refresh-btn" onclick="loadFailedFiles()">Refresh</button>
+            </div>
+            <div id="failedFiles"></div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2 class="section-title">CSV Files</h2>
+                <div>
+                    <button class="btn btn-small btn-danger" onclick="clearCSVs()">Clear All</button>
+                    <button class="btn btn-small refresh-btn" onclick="loadCSVFiles()">Refresh</button>
+                </div>
+            </div>
+            <div id="csvFiles"></div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2 class="section-title">Log Files</h2>
+                <div>
+                    <button class="btn btn-small btn-danger" onclick="clearLogs()">Clear All</button>
+                    <button class="btn btn-small refresh-btn" onclick="loadLogs()">Refresh</button>
+                </div>
+            </div>
+            <div id="logFiles"></div>
+        </div>
+    </div>
+
+    <!-- Log Viewer Modal -->
+    <div id="logModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="logModalTitle">Log Viewer</h2>
+                <button class="close-btn" onclick="closeLogModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <pre id="logContent" class="log-content">Loading...</pre>
+            </div>
+            <div class="log-controls">
+                <div>
+                    <span id="liveIndicator" class="live-indicator" style="display: none;">
+                        <span class="live-dot"></span>
+                        Live Update
+                    </span>
+                    <span id="logSize" style="margin-left: 15px; color: #666;"></span>
+                </div>
+                <div>
+                    <button class="btn btn-small" onclick="downloadCurrentLog()">Download</button>
+                    <button class="btn btn-small" onclick="scrollToBottom()">Scroll to Bottom</button>
+                    <button class="btn btn-small" onclick="toggleLiveUpdate()">
+                        <span id="liveToggleText">Enable Live</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showMessage(text, type) {
+            const msg = document.getElementById('message');
+            msg.textContent = text;
+            msg.className = `message ${type}`;
+            msg.style.display = 'block';
+            setTimeout(() => {
+                msg.style.display = 'none';
+            }, 5000);
+        }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
+        function renderTable(files, type) {
+            if (files.length === 0) {
+                return '<div class="empty-message">No files found</div>';
+            }
+
+            let html = '<table><thead><tr><th>Filename</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead><tbody>';
+            files.forEach(file => {
+                html += `<tr>
+                    <td>${file.name}</td>
+                    <td>${formatSize(file.size)}</td>
+                    <td>${file.modified}</td>
+                    <td><button class="btn btn-small btn-danger" onclick="deleteFile('${type}', '${file.name}')">Delete</button></td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            return html;
+        }
+
+        function renderLogTable(logs) {
+            if (logs.length === 0) {
+                return '<div class="empty-message">No log files found</div>';
+            }
+
+            let html = '<table><thead><tr><th>Log File</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead><tbody>';
+            logs.forEach(log => {
+                html += `<tr>
+                    <td>${log.name}</td>
+                    <td>${formatSize(log.size)}</td>
+                    <td>${log.modified}</td>
+                    <td>
+                        <button class="btn btn-small btn-watch" onclick="watchLog('${log.path}', '${log.name}')">Watch</button>
+                        <button class="btn btn-small btn-danger" onclick="deleteLog('${log.path}')">Delete</button>
+                    </td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            return html;
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const stats = await response.json();
+                document.getElementById('stat-input').textContent = stats.input_count;
+                document.getElementById('stat-processed').textContent = stats.processed_count;
+                document.getElementById('stat-failed').textContent = stats.failed_count;
+                document.getElementById('stat-logs').textContent = stats.log_count;
+                document.getElementById('stat-csv').textContent = stats.csv_count;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        async function loadInputFiles() {
+            try {
+                const response = await fetch('/api/files/input');
+                const files = await response.json();
+                document.getElementById('inputFiles').innerHTML = renderTable(files, 'input');
+            } catch (error) {
+                console.error('Error loading input files:', error);
+            }
+        }
+
+        async function loadProcessedFiles() {
+            try {
+                const response = await fetch('/api/files/processed');
+                const files = await response.json();
+                document.getElementById('processedFiles').innerHTML = renderTable(files, 'processed');
+            } catch (error) {
+                console.error('Error loading processed files:', error);
+            }
+        }
+
+        async function loadFailedFiles() {
+            try {
+                const response = await fetch('/api/files/failed');
+                const files = await response.json();
+                document.getElementById('failedFiles').innerHTML = renderTable(files, 'failed');
+            } catch (error) {
+                console.error('Error loading failed files:', error);
+            }
+        }
+
+        async function loadLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                const logs = await response.json();
+                document.getElementById('logFiles').innerHTML = renderLogTable(logs);
+            } catch (error) {
+                console.error('Error loading logs:', error);
+            }
+        }
+
+        async function loadCSVFiles() {
+            try {
+                const response = await fetch('/api/csv');
+                const csvs = await response.json();
+                document.getElementById('csvFiles').innerHTML = renderCSVTable(csvs);
+            } catch (error) {
+                console.error('Error loading CSV files:', error);
+            }
+        }
+
+        function renderCSVTable(csvs) {
+            if (csvs.length === 0) {
+                return '<div class="empty-message">No CSV files found</div>';
+            }
+
+            let html = '<table><thead><tr><th>CSV File</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead><tbody>';
+            csvs.forEach(csv => {
+                html += `<tr>
+                    <td>${csv.name}</td>
+                    <td>${formatSize(csv.size)}</td>
+                    <td>${csv.modified}</td>
+                    <td>
+                        <button class="btn btn-small btn-watch" onclick="viewCSV('${csv.path}', '${csv.name}')">View</button>
+                        <button class="btn btn-small" onclick="downloadCSV('${csv.path}')">Download</button>
+                        <button class="btn btn-small btn-danger" onclick="deleteCSV('${csv.path}')">Delete</button>
+                    </td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            return html;
+        }
+
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage(result.message, 'success');
+                    loadAll();
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Upload failed: ' + error.message, 'error');
+            }
+        }
+
+        async function deleteFile(type, filename) {
+            if (!confirm(`Delete ${filename}?`)) return;
+
+            try {
+                const response = await fetch(`/api/delete/${type}/${encodeURIComponent(filename)}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage(result.message, 'success');
+                    loadAll();
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Delete failed: ' + error.message, 'error');
+            }
+        }
+
+        async function deleteLog(path) {
+            if (!confirm(`Delete ${path}?`)) return;
+
+            try {
+                const response = await fetch(`/api/delete/logs/${encodeURIComponent(path)}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage(result.message, 'success');
+                    loadAll();
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Delete failed: ' + error.message, 'error');
+            }
+        }
+
+        async function deleteCSV(path) {
+            if (!confirm(`Delete ${path}?`)) return;
+
+            try {
+                const response = await fetch(`/api/delete/csv/${encodeURIComponent(path)}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage(result.message, 'success');
+                    loadAll();
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Delete failed: ' + error.message, 'error');
+            }
+        }
+
+        async function clearInput() {
+            if (!confirm('Delete all input files?')) return;
+
+            try {
+                const response = await fetch('/api/clear/input', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage(result.message, 'success');
+                    loadAll();
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Operation failed: ' + error.message, 'error');
+            }
+        }
+
+        async function clearProcessed() {
+            if (!confirm('Delete all processed files?')) return;
+
+            try {
+                const response = await fetch('/api/clear/processed', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage(result.message, 'success');
+                    loadAll();
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Operation failed: ' + error.message, 'error');
+            }
+        }
+
+        async function clearLogs() {
+            if (!confirm('Delete all log files?')) return;
+
+            try {
+                const response = await fetch('/api/clear/logs', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage(result.message, 'success');
+                    loadAll();
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Operation failed: ' + error.message, 'error');
+            }
+        }
+
+        async function clearCSVs() {
+            if (!confirm('Delete all CSV files?')) return;
+
+            try {
+                const response = await fetch('/api/clear/csv', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage(result.message, 'success');
+                    loadAll();
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Operation failed: ' + error.message, 'error');
+            }
+        }
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                document.getElementById('productType').value = config.product_type;
+                document.getElementById('serialNumber').value = config.serial_number;
+            } catch (error) {
+                console.error('Error loading config:', error);
+            }
+        }
+
+        async function updateConfig() {
+            const productType = document.getElementById('productType').value.trim();
+            const serialNumber = document.getElementById('serialNumber').value.trim();
+
+            // Validation
+            if (!productType) {
+                showMessage('Product Type is required!', 'error');
+                document.getElementById('productType').focus();
+                return;
+            }
+            if (!serialNumber) {
+                showMessage('Serial Number is required!', 'error');
+                document.getElementById('serialNumber').focus();
+                return;
+            }
+
+            try {
+                showMessage('Updating configuration and restarting parser... Please wait ~10 seconds', 'info');
+
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        product_type: productType,
+                        serial_number: serialNumber
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    if (result.restart_success) {
+                        showMessage('✓ Configuration updated and parser restarted successfully! Data will be tagged with: ' + productType + ' / ' + serialNumber, 'success');
+                    } else {
+                        showMessage('⚠️ Configuration updated but restart had issues: ' + result.message, 'warning');
+                    }
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Configuration update failed: ' + error.message, 'error');
+            }
+        }
+
+        async function startProcessing() {
+            const processBtn = document.getElementById('processBtn');
+            const processingStatus = document.getElementById('processingStatus');
+
+            // Disable button
+            processBtn.disabled = true;
+            processingStatus.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/process', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage(result.message, 'success');
+                    // Start monitoring processing status
+                    monitorProcessing();
+                } else {
+                    showMessage(result.message || result.error, 'error');
+                    processBtn.disabled = false;
+                    processingStatus.style.display = 'none';
+                }
+            } catch (error) {
+                showMessage('Failed to start processing: ' + error.message, 'error');
+                processBtn.disabled = false;
+                processingStatus.style.display = 'none';
+            }
+        }
+
+        let processingInterval = null;
+
+        async function monitorProcessing() {
+            processingInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/processing-status');
+                    const status = await response.json();
+
+                    if (!status.is_processing) {
+                        // Processing completed
+                        clearInterval(processingInterval);
+                        processingInterval = null;
+
+                        const processBtn = document.getElementById('processBtn');
+                        const processingStatus = document.getElementById('processingStatus');
+
+                        processBtn.disabled = false;
+                        processingStatus.style.display = 'none';
+
+                        showMessage('Processing completed!', 'success');
+                        loadAll(); // Refresh all data
+                    }
+                } catch (error) {
+                    console.error('Error checking status:', error);
+                }
+            }, 3000); // Check every 3 seconds
+        }
+
+        // Clean up interval on page unload
+        window.addEventListener('beforeunload', () => {
+            if (processingInterval) {
+                clearInterval(processingInterval);
+            }
+            if (logUpdateInterval) {
+                clearInterval(logUpdateInterval);
+            }
+        });
+
+        // Log viewer functionality
+        let currentLogPath = null;
+        let logUpdateInterval = null;
+        let isLiveUpdateEnabled = false;
+
+        async function watchLog(path, name) {
+            currentLogPath = path;
+            document.getElementById('logModalTitle').textContent = `Log: ${name}`;
+            document.getElementById('logModal').style.display = 'block';
+            document.getElementById('liveToggleText').textContent = 'Enable Live';
+            document.getElementById('liveIndicator').style.display = 'none';
+            isLiveUpdateEnabled = false;
+
+            // Stop any existing interval
+            if (logUpdateInterval) {
+                clearInterval(logUpdateInterval);
+                logUpdateInterval = null;
+            }
+
+            // Load log content
+            await loadLogContent();
+        }
+
+        async function loadLogContent() {
+            if (!currentLogPath) return;
+
+            try {
+                const response = await fetch(`/api/log-content/${encodeURIComponent(currentLogPath)}`);
+                const result = await response.json();
+
+                if (response.ok) {
+                    const logContent = document.getElementById('logContent');
+                    logContent.textContent = result.content;
+
+                    // Update size display
+                    document.getElementById('logSize').textContent = `Size: ${formatSize(result.size)}`;
+
+                    // Auto-scroll to bottom if live update is enabled
+                    if (isLiveUpdateEnabled) {
+                        scrollToBottom();
+                    }
+                } else {
+                    document.getElementById('logContent').textContent = `Error: ${result.error}`;
+                }
+            } catch (error) {
+                document.getElementById('logContent').textContent = `Error loading log: ${error.message}`;
+            }
+        }
+
+        function closeLogModal() {
+            document.getElementById('logModal').style.display = 'none';
+            currentLogPath = null;
+
+            // Stop live update
+            if (logUpdateInterval) {
+                clearInterval(logUpdateInterval);
+                logUpdateInterval = null;
+            }
+            isLiveUpdateEnabled = false;
+        }
+
+        function toggleLiveUpdate() {
+            isLiveUpdateEnabled = !isLiveUpdateEnabled;
+
+            if (isLiveUpdateEnabled) {
+                document.getElementById('liveToggleText').textContent = 'Disable Live';
+                document.getElementById('liveIndicator').style.display = 'inline-flex';
+
+                // Start auto-refresh every 2 seconds
+                logUpdateInterval = setInterval(loadLogContent, 2000);
+            } else {
+                document.getElementById('liveToggleText').textContent = 'Enable Live';
+                document.getElementById('liveIndicator').style.display = 'none';
+
+                // Stop auto-refresh
+                if (logUpdateInterval) {
+                    clearInterval(logUpdateInterval);
+                    logUpdateInterval = null;
+                }
+            }
+        }
+
+        function scrollToBottom() {
+            const logContent = document.getElementById('logContent');
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('logModal');
+            if (event.target === modal) {
+                closeLogModal();
+            }
+        };
+
+        function downloadCurrentLog() {
+            if (currentLogPath) {
+                window.open(`/api/download/log/${encodeURIComponent(currentLogPath)}`, '_blank');
+            }
+        }
+
+        // CSV viewer functions
+        async function viewCSV(path, name) {
+            currentLogPath = path;
+            document.getElementById('logModalTitle').textContent = `CSV: ${name}`;
+            document.getElementById('logModal').style.display = 'block';
+            document.getElementById('liveToggleText').textContent = 'Enable Live';
+            document.getElementById('liveIndicator').style.display = 'none';
+            isLiveUpdateEnabled = false;
+
+            // Stop any existing interval
+            if (logUpdateInterval) {
+                clearInterval(logUpdateInterval);
+                logUpdateInterval = null;
+            }
+
+            try {
+                const response = await fetch(`/api/csv-content/${encodeURIComponent(path)}`);
+                const result = await response.json();
+
+                if (response.ok) {
+                    const logContent = document.getElementById('logContent');
+                    logContent.textContent = result.content;
+                    document.getElementById('logSize').textContent = `Size: ${formatSize(result.size)}`;
+                } else {
+                    document.getElementById('logContent').textContent = `Error: ${result.error}`;
+                }
+            } catch (error) {
+                document.getElementById('logContent').textContent = `Error loading CSV: ${error.message}`;
+            }
+        }
+
+        function downloadCSV(path) {
+            window.open(`/api/download/csv/${encodeURIComponent(path)}`, '_blank');
+        }
+
+        function loadAll() {
+            loadStats();
+            loadConfig();
+            loadInputFiles();
+            loadProcessedFiles();
+            loadFailedFiles();
+            loadCSVFiles();
+            loadLogs();
+        }
+
+        // File upload handling
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+
+        uploadArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            for (let file of files) {
+                uploadFile(file);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            for (let file of files) {
+                uploadFile(file);
+            }
+            fileInput.value = '';
+        });
+
+        // Load data on page load
+        loadAll();
+
+        // Auto-refresh every 10 seconds
+        setInterval(loadAll, 10000);
+    </script>
+</body>
+</html>

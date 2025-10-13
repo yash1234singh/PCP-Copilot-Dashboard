@@ -50,23 +50,24 @@ def load_metrics(csv_path):
 def create_panel(panel_id, title, metrics, x, y, w=12, h=8):
     """Create a Grafana panel for a group of metrics"""
 
-    # Build metric filter regex
-    if len(metrics) == 1:
-        metric_filter = f'r["metric"] == "{metrics[0]}"'
+    # Convert metric names to field names (replace dots, dashes, and spaces with underscores)
+    field_names = [m.replace('.', '_').replace('-', '_').replace(' ', '_') for m in metrics]
+
+    # Build field filter regex
+    if len(field_names) == 1:
+        field_filter = f'r["_field"] == "{field_names[0]}"'
     else:
-        # Create regex pattern for multiple metrics
-        metric_pattern = "|".join([m.replace('.', '\\.') for m in metrics])
-        metric_filter = f'r["metric"] =~ /^({metric_pattern})$/'
+        # Create regex pattern for multiple fields - underscores don't need escaping in Flux regex
+        field_pattern = "|".join(field_names)
+        field_filter = f'r["_field"] =~ /^({field_pattern})$/'
 
     query = f"""from(bucket: "pcp-metrics")
   |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
   |> filter(fn: (r) => r["_measurement"] == "pcp_metrics")
-  |> filter(fn: (r) => r["_field"] == "value")
-  |> filter(fn: (r) => r["product_type"] == "${{product_type}}")
-  |> filter(fn: (r) => r["serialNumber"] == "${{serialNumber}}")
-  |> filter(fn: (r) => {metric_filter})
-  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)
-  |> pivot(rowKey:["_time"], columnKey: ["metric"], valueColumn: "_value")"""
+  |> filter(fn: (r) => r["product_type"] =~ /${{product_type}}/)
+  |> filter(fn: (r) => r["serialNumber"] =~ /${{serialNumber}}/)
+  |> filter(fn: (r) => {field_filter})
+  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"""
 
     panel = {
         "datasource": {
@@ -217,53 +218,61 @@ def generate_dashboard(metrics_hierarchy):
         "links": [],
         "liveNow": False,
         "panels": panels,
-        "refresh": "30s",
+        "refresh": "",
         "schemaVersion": 38,
         "style": "dark",
         "tags": ["auto-generated", "pcp", "metrics", "hierarchical"],
         "templating": {
             "list": [
                 {
+                    "allValue": ".*",
                     "current": {
-                        "selected": False,
-                        "text": "L5E",
-                        "value": "L5E"
+                        "selected": True,
+                        "text": "All",
+                        "value": "$__all"
                     },
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "influxdb"
+                    },
+                    "definition": "import \"influxdata/influxdb/v1\" v1.tagValues(bucket: \"pcp-metrics\", tag: \"product_type\", start: -30d)",
                     "hide": 0,
-                    "includeAll": False,
+                    "includeAll": True,
+                    "label": "Product Type",
                     "multi": False,
                     "name": "product_type",
-                    "options": [
-                        {
-                            "selected": True,
-                            "text": "L5E",
-                            "value": "L5E"
-                        }
-                    ],
-                    "query": "L5E",
+                    "options": [],
+                    "query": "import \"influxdata/influxdb/v1\" v1.tagValues(bucket: \"pcp-metrics\", tag: \"product_type\", start: -30d)",
+                    "refresh": 2,
+                    "regex": "",
                     "skipUrlSync": False,
-                    "type": "custom"
+                    "sort": 0,
+                    "type": "query"
                 },
                 {
+                    "allValue": ".*",
                     "current": {
-                        "selected": False,
-                        "text": "341100896",
-                        "value": "341100896"
+                        "selected": True,
+                        "text": "All",
+                        "value": "$__all"
                     },
+                    "datasource": {
+                        "type": "influxdb",
+                        "uid": "influxdb"
+                    },
+                    "definition": "import \"influxdata/influxdb/v1\" v1.tagValues(bucket: \"pcp-metrics\", tag: \"serialNumber\", start: -30d)",
                     "hide": 0,
-                    "includeAll": False,
+                    "includeAll": True,
+                    "label": "Serial Number",
                     "multi": False,
                     "name": "serialNumber",
-                    "options": [
-                        {
-                            "selected": True,
-                            "text": "341100896",
-                            "value": "341100896"
-                        }
-                    ],
-                    "query": "341100896",
+                    "options": [],
+                    "query": "import \"influxdata/influxdb/v1\" v1.tagValues(bucket: \"pcp-metrics\", tag: \"serialNumber\", start: -30d)",
+                    "refresh": 2,
+                    "regex": "",
                     "skipUrlSync": False,
-                    "type": "custom"
+                    "sort": 0,
+                    "type": "query"
                 }
             ]
         },

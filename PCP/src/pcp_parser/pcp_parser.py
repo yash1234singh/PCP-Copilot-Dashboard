@@ -36,9 +36,9 @@ INFLUXDB_ORG = os.getenv("INFLUXDB_ORG", "pcp-org")
 INFLUXDB_BUCKET = os.getenv("INFLUXDB_BUCKET", "pcp-metrics")
 INFLUXDB_MEASUREMENT = os.getenv("INFLUXDB_MEASUREMENT", "pcp_metrics")
 
-# Static tags to enrich all data points
-PRODUCT_TYPE = os.getenv("PRODUCT_TYPE", "L5E")
-SERIAL_NUMBER = os.getenv("SERIAL_NUMBER", "341100896")
+# Static tags to enrich all data points - will be loaded from .env file
+PRODUCT_TYPE = None
+SERIAL_NUMBER = None
 
 # Value filtering
 PCP_METRICS_FILTER = os.getenv("PCP_METRICS_FILTER", "").lower()  # Options: "skip_zero", "skip_empty", "skip_none", or combination
@@ -71,6 +71,15 @@ def setup_logging():
 
     log_file = LOG_DIR / "pcp_parser.log"
 
+    # Root logger
+    logger = logging.getLogger()
+
+    # Clear existing handlers to prevent duplicate logging
+    if logger.hasHandlers():
+        logger.handlers.clear()
+
+    logger.setLevel(logging.DEBUG)
+
     # Create formatters
     file_formatter = logging.Formatter('[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     console_formatter = logging.Formatter('%(message)s')
@@ -85,9 +94,6 @@ def setup_logging():
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(console_formatter)
 
-    # Root logger
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
 
@@ -98,6 +104,35 @@ def log_separator(logger, title: str):
     logger.info("=" * 60)
     logger.info(title)
     logger.info("=" * 60)
+
+def load_config_from_env_file():
+    """Load PRODUCT_TYPE and SERIAL_NUMBER from .env file"""
+    global PRODUCT_TYPE, SERIAL_NUMBER
+
+    env_file = Path("/src/.env")
+
+    # Set defaults first
+    PRODUCT_TYPE = "SERVER1"
+    SERIAL_NUMBER = "1234"
+
+    # Try to read from .env file (highest priority)
+    if env_file.exists():
+        try:
+            with open(env_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        if line.startswith('PRODUCT_TYPE='):
+                            PRODUCT_TYPE = line.split('=', 1)[1].strip()
+                        elif line.startswith('SERIAL_NUMBER='):
+                            SERIAL_NUMBER = line.split('=', 1)[1].strip()
+        except Exception as e:
+            # If .env file read fails, try environment variables as fallback
+            PRODUCT_TYPE = os.getenv("PRODUCT_TYPE", PRODUCT_TYPE)
+            SERIAL_NUMBER = os.getenv("SERIAL_NUMBER", SERIAL_NUMBER)
+            print(f"Warning: Could not read .env file: {e}, using environment variables")
+
+    return PRODUCT_TYPE, SERIAL_NUMBER
 
 def load_metrics_cache():
     """Load existing metrics from CSV into memory cache"""
@@ -357,6 +392,9 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> bool:
         logger.info(f"Connecting to InfluxDB: {INFLUXDB_URL}")
         client = InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG)
 
+        # Log the tag values being used
+        logger.info(f"Using tags for InfluxDB: product_type={PRODUCT_TYPE}, serialNumber={SERIAL_NUMBER}")
+
         # Use async write API with batching for parallel processing
         write_options = WriteOptions(
             batch_size=INFLUX_BATCH_SIZE,
@@ -384,10 +422,11 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> bool:
 
         logger.info(f"Command: pmrep -a {archive_base} -t 1sec -o csv -U --ignore-unknown [+ {len(metrics)} metrics]")
 
+        # Redirect stderr to devnull to suppress pmrep internal timeout messages
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,  # Suppress stderr (timeout messages)
             text=True,
             bufsize=1
         )
@@ -400,6 +439,11 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> bool:
         total_points_written = 0
         batch_count = 0
 
+        # Save CSV output to logs
+        csv_output_file = LOG_DIR / f"pmrep_output_{archive_base.stem}.csv"
+        csv_file = open(csv_output_file, 'w', encoding='utf-8')
+        logger.info(f"Saving pmrep CSV output to: {csv_output_file}")
+
         logger.info("Processing pmrep output...")
 
         for line in process.stdout:
@@ -407,6 +451,8 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> bool:
             if not line:
                 continue
 
+            # Write to CSV file
+            csv_file.write(line + '\n')
             line_count += 1
 
             # First line is header
@@ -431,7 +477,15 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> bool:
                 except:
                     continue
 
-                # Create points for each metric
+                # Create single point with all metrics as fields
+                point = Point(INFLUXDB_MEASUREMENT) \
+                    .tag("product_type", PRODUCT_TYPE) \
+                    .tag("serialNumber", SERIAL_NUMBER) \
+                    .time(ts)
+
+                has_fields = False
+
+                # Add all metrics as fields
                 for i, metric_name in enumerate(header[1:], start=1):
                     value_str = values[i].strip().strip('"')
 
@@ -461,18 +515,18 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> bool:
                             if "skip_none" in PCP_METRICS_FILTER and (value_str.lower() == "none" or value_str.strip() == ""):
                                 continue
 
-                        # Create InfluxDB point with static tags
-                        point = Point(INFLUXDB_MEASUREMENT) \
-                            .tag("metric", metric_name) \
-                            .tag("product_type", PRODUCT_TYPE) \
-                            .tag("serialNumber", SERIAL_NUMBER) \
-                            .field("value", value) \
-                            .time(ts)
-
-                        points.append(point)
+                        # Add metric as field (sanitize metric name for field name)
+                        # Replace dots, dashes, and spaces with underscores
+                        field_name = metric_name.replace('.', '_').replace('-', '_').replace(' ', '_')
+                        point.field(field_name, value)
+                        has_fields = True
 
                     except ValueError:
                         error_count += 1
+
+                # Only add point if it has at least one field
+                if has_fields:
+                    points.append(point)
 
                 # Write points in batches (configurable size for performance)
                 if len(points) >= INFLUX_BATCH_SIZE:
@@ -489,6 +543,10 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> bool:
                 if error_count <= 5:
                     logger.debug(f"Error processing line {line_count}: {e}")
 
+        # Close CSV file
+        csv_file.close()
+        logger.info(f"CSV output saved to: {csv_output_file}")
+
         # Wait for process to complete
         process.wait(timeout=300)
 
@@ -502,29 +560,6 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> bool:
         logger.info("Flushing async writes to InfluxDB...")
         write_api.flush()
         logger.info("All async writes completed")
-
-        # Check for errors (filter out known harmless warnings)
-        stderr = process.stderr.read()
-        if stderr:
-            # Filter out known harmless warnings that --ignore-unknown handles
-            harmless_patterns = [
-                "PM_ERR_INDOM_LOG",  # Instance domain not defined (expected with --ignore-unknown)
-                "PM_ERR_BADDERIVE",  # Invalid derived metric (expected with --ignore-unknown)
-                "Invalid metric"     # Generic invalid metric message
-            ]
-
-            # Split stderr into lines and filter
-            stderr_lines = stderr.strip().split('\n')
-            filtered_stderr = []
-
-            for line in stderr_lines:
-                # Skip line if it contains any harmless pattern
-                if not any(pattern in line for pattern in harmless_patterns):
-                    filtered_stderr.append(line)
-
-            # Only log if there are real errors (not filtered out)
-            if filtered_stderr:
-                logger.warning(f"pmrep stderr: {chr(10).join(filtered_stderr)}")
 
         logger.info(f"===== EXPORT COMPLETE =====")
         logger.info(f"Total data points written: {total_points_written}")
@@ -618,9 +653,9 @@ def process_archive(archive_path: Path, logger) -> bool:
             logger.info(f"   ├─ Validation: {validation_duration:.2f}s")
             logger.info(f"   └─ Export: {export_duration:.2f}s")
 
-            # Remove processed archive
-            archive_path.unlink()
-            logger.info(f"✓ Removed {archive_name}")
+            # Move processed archive to processed directory
+            shutil.move(str(archive_path), str(PROCESSED_DIR / archive_name))
+            logger.info(f"✓ Moved {archive_name} to {PROCESSED_DIR}")
         else:
             logger.error(f"✗ Failed to export {archive_name} to InfluxDB")
             logger.error(f"⏱️  TOTAL PROCESSING TIME (FAILED): {minutes} minutes {seconds:.2f} seconds")
@@ -643,9 +678,64 @@ def process_archive(archive_path: Path, logger) -> bool:
         if extract_path.exists():
             shutil.rmtree(extract_path, ignore_errors=True)
 
-def main():
-    """Main monitoring loop"""
+def process_all_archives():
+    """Process all archives in the input directory (called on-demand)"""
     logger = setup_logging()
+
+    logger.info("=" * 60)
+    logger.info("MANUAL PROCESSING TRIGGERED")
+    logger.info("=" * 60)
+
+    # Load configuration from .env file
+    product_type, serial_number = load_config_from_env_file()
+    logger.info("=" * 60)
+    logger.info("DATA TAGGING CONFIGURATION:")
+    logger.info(f"  PRODUCT_TYPE  = {product_type}")
+    logger.info(f"  SERIAL_NUMBER = {serial_number}")
+    logger.info("=" * 60)
+
+    # Load existing metrics from CSV
+    load_metrics_cache()
+    logger.info(f"Loaded {len(_metrics_cache)} existing metrics from cache")
+
+    # Check for archives
+    logger.info(f"Checking for .tar.xz files in {WATCH_DIR}...")
+    archive_files = list(WATCH_DIR.glob("*.tar.xz"))
+
+    if not archive_files:
+        logger.info("No files found to process")
+        return {"status": "success", "message": "No files found to process", "processed": 0, "failed": 0}
+
+    logger.info(f"Found {len(archive_files)} archive(s) to process")
+
+    processed_count = 0
+    failed_count = 0
+
+    for archive in archive_files:
+        logger.info(f"Processing: {archive.name}")
+        success = process_archive(archive, logger)
+        if success:
+            processed_count += 1
+        else:
+            failed_count += 1
+
+    logger.info("=" * 60)
+    logger.info(f"PROCESSING COMPLETE: {processed_count} successful, {failed_count} failed")
+    logger.info("=" * 60)
+
+    return {
+        "status": "success",
+        "message": f"Processed {processed_count} file(s), {failed_count} failed",
+        "processed": processed_count,
+        "failed": failed_count
+    }
+
+def main():
+    """Main monitoring loop - checks for trigger file"""
+    logger = setup_logging()
+
+    # Load configuration from .env file
+    product_type, serial_number = load_config_from_env_file()
 
     logger.info("=" * 60)
     logger.info("PCP Archive to InfluxDB Processor (Python)")
@@ -657,7 +747,7 @@ def main():
     logger.info(f"Log directory: {LOG_DIR}")
     logger.info(f"InfluxDB URL: {INFLUXDB_URL}")
     logger.info(f"InfluxDB Measurement: {INFLUXDB_MEASUREMENT}")
-    logger.info(f"Static Tags - Product Type: {PRODUCT_TYPE}, Serial Number: {SERIAL_NUMBER}")
+    logger.info(f"Static Tags - Product Type: {product_type}, Serial Number: {serial_number}")
     logger.info("")
 
     # Create necessary directories
@@ -683,33 +773,35 @@ def main():
             time.sleep(5)
 
     logger.info("")
-    logger.info("Starting continuous monitoring loop...")
-    logger.info("Checking every 10 seconds for new .tar.xz files")
+    logger.info("Waiting for manual trigger via web interface...")
+    logger.info("Trigger file: /src/.process_trigger")
     logger.info("")
 
-    # Main monitoring loop
+    trigger_file = Path("/src/.process_trigger")
+
+    # Main monitoring loop - check for trigger file
     while True:
         try:
-            logger.info(f"Checking for .tar.xz files in {WATCH_DIR}...")
+            # Check if trigger file exists
+            if trigger_file.exists():
+                logger.info("TRIGGER DETECTED - Starting processing...")
 
-            # Find all .tar.xz files
-            archive_files = list(WATCH_DIR.glob("*.tar.xz"))
+                # Remove trigger file
+                trigger_file.unlink()
 
-            if archive_files:
-                for archive in archive_files:
-                    logger.info(f"Found file: {archive.name}")
-                    process_archive(archive, logger)
-            else:
-                logger.info("No files found. Sleeping for 10 seconds...")
+                # Process all archives
+                process_all_archives()
 
-            time.sleep(10)
+                logger.info("Waiting for next trigger...")
+
+            time.sleep(2)  # Check every 2 seconds for trigger
 
         except KeyboardInterrupt:
             logger.info("Received interrupt signal, shutting down...")
             break
         except Exception as e:
             logger.error(f"Unexpected error in main loop: {e}", exc_info=True)
-            time.sleep(10)
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()

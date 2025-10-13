@@ -82,6 +82,8 @@ services:
     container_name: pcp_parser
     volumes:
       - .:/src
+    env_file:
+      - .env
     environment:
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=pcp-admin-token-12345
@@ -91,8 +93,8 @@ services:
       # Value filtering (comma-separated: skip_zero, skip_empty, skip_none)
       # WARNING: skip_zero may filter useful metrics! Use cautiously
       - PCP_METRICS_FILTER=skip_empty,skip_none
-      - PRODUCT_TYPE=TEST_SERVER
-      - SERIAL_NUMBER=12345
+      - PRODUCT_TYPE=${PRODUCT_TYPE:-SERVER1}
+      - SERIAL_NUMBER=${SERIAL_NUMBER:-1234}
       # Performance tuning (higher = faster but more memory)
       - VALIDATION_BATCH_SIZE=1000
       - INFLUX_BATCH_SIZE=50000
@@ -120,6 +122,26 @@ services:
         max-size: "10m"
         max-file: "3"
         labels: "service=pcp_parser"
+
+  web_pcp_ctrl:
+    build:
+      context: ./web_pcp_ctrl
+      dockerfile: Dockerfile
+    container_name: web_pcp_ctrl
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/src
+      - /var/run/docker.sock:/var/run/docker.sock  # Allow container management
+    networks:
+      - pcp-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=web_pcp_ctrl"
 
 networks:
   pcp-network:
