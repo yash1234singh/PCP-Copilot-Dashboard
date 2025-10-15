@@ -339,23 +339,23 @@ def update_config():
 
         logger.info(f"Updated config: PRODUCT_TYPE={product_type}, SERIAL_NUMBER={serial_number}")
 
-        # Automatically restart pcp_parser container
+        # Automatically restart both parser containers
         restart_success = False
         restart_message = ""
         try:
-            # Execute docker-compose restart from /src directory
+            # Execute docker-compose restart from /src directory for both parsers
             result = subprocess.run(
-                ['docker-compose', 'restart', 'pcp_parser'],
+                ['docker-compose', 'restart', 'pcp_parser_python', 'pcp_parser_go'],
                 cwd='/src',
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=60
             )
 
             if result.returncode == 0:
                 restart_success = True
-                restart_message = "Configuration updated and pcp_parser container restarted successfully."
-                logger.info("Successfully restarted pcp_parser container")
+                restart_message = "Configuration updated and both parser containers (Python & Go) restarted successfully."
+                logger.info("Successfully restarted pcp_parser_python and pcp_parser_go containers")
             else:
                 restart_message = f"Configuration updated but container restart failed: {result.stderr}"
                 logger.warning(f"Container restart failed: {result.stderr}")
@@ -383,13 +383,28 @@ def update_config():
 def trigger_process():
     """Trigger PCP archive processing"""
     try:
-        trigger_file = Path("/src/.process_trigger")
+        # Get parser selection from request
+        data = request.get_json() or {}
+        parser = data.get('parser', 'python')  # Default to python if not specified
+
+        # Determine which trigger file to create
+        if parser == 'python':
+            trigger_file = Path("/src/.process_trigger_python")
+            parser_name = 'Python parser'
+        elif parser == 'go':
+            trigger_file = Path("/src/.process_trigger_go")
+            parser_name = 'Go parser'
+        else:
+            return jsonify({
+                'success': False,
+                'message': f'Invalid parser selection: {parser}'
+            }), 400
 
         # Check if processing is already running
         if trigger_file.exists():
             return jsonify({
                 'success': False,
-                'message': 'Processing is already in progress. Please wait.'
+                'message': f'{parser_name} is already processing. Please wait.'
             }), 409
 
         # Check if there are files to process
@@ -402,12 +417,13 @@ def trigger_process():
 
         # Create trigger file
         trigger_file.touch()
-        logger.info(f"Processing triggered for {input_count} file(s)")
+        logger.info(f"Processing triggered for {input_count} file(s) using {parser_name}")
 
         return jsonify({
             'success': True,
-            'message': f'Processing started for {input_count} file(s). Check logs for progress.',
-            'file_count': input_count
+            'message': f'Processing started for {input_count} file(s) using {parser_name}. Check logs for progress.',
+            'file_count': input_count,
+            'parser': parser
         })
     except Exception as e:
         logger.error(f"Process trigger error: {str(e)}")
@@ -417,20 +433,34 @@ def trigger_process():
 def get_processing_status():
     """Get current processing status"""
     try:
-        trigger_file = Path("/src/.process_trigger")
-        is_processing = trigger_file.exists()
+        trigger_python = Path("/src/.process_trigger_python")
+        trigger_go = Path("/src/.process_trigger_go")
+        is_processing = trigger_python.exists() or trigger_go.exists()
 
-        # Get latest log entries
-        log_file = LOG_DIR / "pcp_parser" / "pcp_parser.log"
+        # Get latest log entries from both parsers
+        python_log_file = LOG_DIR / "pcp_parser_python" / "pcp_parser.log"
+        go_log_file = LOG_DIR / "pcp_parser_go" / "pcp_parser_go.log"
         recent_logs = []
 
-        if log_file.exists():
+        # Read Python parser logs
+        if python_log_file.exists():
             try:
-                with open(log_file, 'r') as f:
+                with open(python_log_file, 'r') as f:
                     lines = f.readlines()
-                    recent_logs = [line.strip() for line in lines[-10:] if line.strip()]
+                    python_logs = [f"[Python] {line.strip()}" for line in lines[-5:] if line.strip()]
+                    recent_logs.extend(python_logs)
             except Exception as e:
-                logger.debug(f"Could not read log: {e}")
+                logger.debug(f"Could not read Python log: {e}")
+
+        # Read Go parser logs
+        if go_log_file.exists():
+            try:
+                with open(go_log_file, 'r') as f:
+                    lines = f.readlines()
+                    go_logs = [f"[Go] {line.strip()}" for line in lines[-5:] if line.strip()]
+                    recent_logs.extend(go_logs)
+            except Exception as e:
+                logger.debug(f"Could not read Go log: {e}")
 
         return jsonify({
             'is_processing': is_processing,

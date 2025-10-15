@@ -75,16 +75,71 @@ services:
         max-file: "3"
         labels: "service=grafana"
 
-  pcp_parser:
+  # Python PCP Parser (original implementation)
+  pcp_parser_python:
     build:
       context: ./pcp_parser
       dockerfile: Dockerfile
-    container_name: pcp_parser
+    container_name: pcp_parser_python
     volumes:
       - .:/src
     env_file:
       - .env
     environment:
+      - WATCH_DIR=/src/input/raw
+      - PROCESSED_DIR=/src/archive/processed
+      - FAILED_DIR=/src/archive/failed
+      - LOG_DIR=/src/logs/pcp_parser_python
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=pcp-admin-token-12345
+      - INFLUXDB_ORG=pcp-org
+      - INFLUXDB_BUCKET=pcp-metrics
+      - INFLUXDB_MEASUREMENT=pcp_metrics
+      - PCP_METRICS_FILTER=skip_empty,skip_none
+      - PRODUCT_TYPE=${PRODUCT_TYPE:-SERVER1}
+      - SERIAL_NUMBER=${SERIAL_NUMBER:-1234}
+      - VALIDATION_BATCH_SIZE=1000
+      - INFLUX_BATCH_SIZE=50000
+      - PROGRESS_LOG_INTERVAL=50
+      - SKIP_VALIDATION=false
+      - FORCE_REVALIDATE=false
+      - ENABLE_PROCESS_METRICS=false
+      - ENABLE_DISK_METRICS=true
+      - ENABLE_FILE_METRICS=true
+      - ENABLE_MEMORY_METRICS=true
+      - ENABLE_NETWORK_METRICS=true
+      - ENABLE_KERNEL_METRICS=true
+      - ENABLE_SWAP_METRICS=false
+      - ENABLE_NFS_METRICS=false
+      # Parser identifier for coordination
+      - PARSER_ID=python
+    depends_on:
+      - influxdb
+    networks:
+      - pcp-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=pcp_parser_python"
+
+  # Go PCP Parser (new implementation)
+  pcp_parser_go:
+    build:
+      context: ./pcp_parser_go
+      dockerfile: Dockerfile
+    container_name: pcp_parser_go
+    volumes:
+      - .:/src
+    env_file:
+      - .env
+    environment:
+      - WATCH_DIR=/src/input/raw
+      - PROCESSED_DIR=/src/archive/processed
+      - FAILED_DIR=/src/archive/failed
+      - LOG_DIR=/src/logs/pcp_parser_go
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=pcp-admin-token-12345
       - INFLUXDB_ORG=pcp-org
@@ -111,6 +166,8 @@ services:
       - ENABLE_KERNEL_METRICS=true      # kernel.* metrics
       - ENABLE_SWAP_METRICS=false       # swap.* metrics
       - ENABLE_NFS_METRICS=false        # nfs.* metrics (often have PM_ERR_INDOM_LOG errors)
+      # Parser identifier for coordination
+      - PARSER_ID=go
     depends_on:
       - influxdb
     networks:
@@ -121,7 +178,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-        labels: "service=pcp_parser"
+        labels: "service=pcp_parser_go"
 
   web_pcp_ctrl:
     build:

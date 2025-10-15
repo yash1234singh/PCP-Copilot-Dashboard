@@ -416,6 +416,19 @@
         <div class="upload-section">
             <h2 style="margin-bottom: 20px; color: #333;">Process Archives</h2>
             <div style="text-align: center; margin-bottom: 30px;">
+                <div style="margin-bottom: 20px;">
+                    <label style="color: #666; font-weight: bold; display: block; margin-bottom: 10px;">Select Parser:</label>
+                    <div style="display: inline-flex; gap: 20px; background: #f8f9ff; padding: 15px 30px; border-radius: 8px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="radio" name="parser" value="python" checked style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;">
+                            <span style="font-size: 16px; color: #333;">Python</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="radio" name="parser" value="go" style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;">
+                            <span style="font-size: 16px; color: #333;">Go</span>
+                        </label>
+                    </div>
+                </div>
                 <button class="btn" id="processBtn" onclick="startProcessing()" style="font-size: 18px; padding: 15px 40px;">
                     <span id="processBtnText">Process All Files</span>
                 </button>
@@ -896,13 +909,22 @@
             const processBtn = document.getElementById('processBtn');
             const processingStatus = document.getElementById('processingStatus');
 
+            // Get selected parser
+            const selectedParser = document.querySelector('input[name="parser"]:checked').value;
+
             // Disable button
             processBtn.disabled = true;
             processingStatus.style.display = 'block';
 
             try {
                 const response = await fetch('/api/process', {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        parser: selectedParser
+                    })
                 });
 
                 const result = await response.json();
@@ -910,7 +932,7 @@
                 if (response.ok) {
                     showMessage(result.message, 'success');
                     // Start monitoring processing status
-                    monitorProcessing();
+                    monitorProcessing(selectedParser);
                 } else {
                     showMessage(result.message || result.error, 'error');
                     processBtn.disabled = false;
@@ -925,7 +947,7 @@
 
         let processingInterval = null;
 
-        async function monitorProcessing() {
+        async function monitorProcessing(selectedParser) {
             processingInterval = setInterval(async () => {
                 try {
                     const response = await fetch('/api/processing-status');

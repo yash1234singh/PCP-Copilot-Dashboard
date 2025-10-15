@@ -22,11 +22,11 @@ from influxdb_client import InfluxDBClient, Point, WriteOptions
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 # Configuration from environment variables
-WATCH_DIR = Path("/src/input/raw")
-EXTRACT_DIR = Path("/tmp/pcp_archives")
-PROCESSED_DIR = Path("/src/archive/processed")
-FAILED_DIR = Path("/src/archive/failed")
-LOG_DIR = Path("/src/logs/pcp_parser")
+WATCH_DIR = Path(os.getenv("WATCH_DIR", "/src/input/raw"))
+EXTRACT_DIR = Path(os.getenv("EXTRACT_DIR", "/tmp/pcp_archives"))
+PROCESSED_DIR = Path(os.getenv("PROCESSED_DIR", "/src/archive/processed"))
+FAILED_DIR = Path(os.getenv("FAILED_DIR", "/src/archive/failed"))
+LOG_DIR = Path(os.getenv("LOG_DIR", "/src/logs/pcp_parser"))
 METRICS_CSV = LOG_DIR / "metrics_labels.csv"
 VALIDATED_METRICS_CACHE = LOG_DIR / "validated_metrics.txt"
 
@@ -495,6 +495,7 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> bool:
                         continue
 
                     try:
+                        # Ensure value is explicitly a float
                         value = float(value_str)
 
                         # Track this metric in CSV (for all valid numeric values, even zeros)
@@ -518,7 +519,9 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> bool:
                         # Add metric as field (sanitize metric name for field name)
                         # Replace dots, dashes, and spaces with underscores
                         field_name = metric_name.replace('.', '_').replace('-', '_').replace(' ', '_')
-                        point.field(field_name, value)
+
+                        # Explicitly ensure float type for InfluxDB (avoid schema conflicts)
+                        point.field(field_name, float(value))
                         has_fields = True
 
                     except ValueError:
@@ -774,10 +777,10 @@ def main():
 
     logger.info("")
     logger.info("Waiting for manual trigger via web interface...")
-    logger.info("Trigger file: /src/.process_trigger")
+    logger.info("Trigger file: /src/.process_trigger_python")
     logger.info("")
 
-    trigger_file = Path("/src/.process_trigger")
+    trigger_file = Path("/src/.process_trigger_python")
 
     # Main monitoring loop - check for trigger file
     while True:
