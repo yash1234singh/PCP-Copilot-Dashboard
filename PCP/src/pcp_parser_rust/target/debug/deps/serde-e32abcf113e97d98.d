@@ -1,0 +1,12 @@
+c:\Users\yashvardhan.singh\PycharmProjects\pythonProject2\PCP\src\pcp_parser_rust\target\debug\deps\libserde-e32abcf113e97d98.rmeta: C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src/lib.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src\integer128.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src\private\mod.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src\private\de.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src\private\ser.rs c:\Users\yashvardhan.singh\PycharmProjects\pythonProject2\PCP\src\pcp_parser_rust\target\debug\build\serde-6ac8d868d1c6f1bf\out/private.rs
+
+c:\Users\yashvardhan.singh\PycharmProjects\pythonProject2\PCP\src\pcp_parser_rust\target\debug\deps\serde-e32abcf113e97d98.d: C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src/lib.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src\integer128.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src\private\mod.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src\private\de.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src\private\ser.rs c:\Users\yashvardhan.singh\PycharmProjects\pythonProject2\PCP\src\pcp_parser_rust\target\debug\build\serde-6ac8d868d1c6f1bf\out/private.rs
+
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src/lib.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src\integer128.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src\private\mod.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src\private\de.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\serde-1.0.228\src\private\ser.rs:
+c:\Users\yashvardhan.singh\PycharmProjects\pythonProject2\PCP\src\pcp_parser_rust\target\debug\build\serde-6ac8d868d1c6f1bf\out/private.rs:
+
+# env-dep:OUT_DIR=c:\\Users\\yashvardhan.singh\\PycharmProjects\\pythonProject2\\PCP\\src\\pcp_parser_rust\\target\\debug\\build\\serde-6ac8d868d1c6f1bf\\out

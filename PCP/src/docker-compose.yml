@@ -180,6 +180,61 @@ services:
         max-file: "3"
         labels: "service=pcp_parser_go"
 
+  # Rust PCP Parser (new implementation)
+  pcp_parser_rust:
+    build:
+      context: ./pcp_parser_rust
+      dockerfile: Dockerfile
+    container_name: pcp_parser_rust
+    volumes:
+      - .:/src
+    env_file:
+      - .env
+    environment:
+      - WATCH_DIR=/src/input/raw
+      - PROCESSED_DIR=/src/archive/processed
+      - FAILED_DIR=/src/archive/failed
+      - LOG_DIR=/src/logs/pcp_parser_rust
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=pcp-admin-token-12345
+      - INFLUXDB_ORG=pcp-org
+      - INFLUXDB_BUCKET=pcp-metrics
+      - INFLUXDB_MEASUREMENT=pcp_metrics
+      # Value filtering (comma-separated: skip_zero, skip_empty, skip_none)
+      # WARNING: skip_zero may filter useful metrics! Use cautiously
+      - PCP_METRICS_FILTER=skip_empty,skip_none
+      - PRODUCT_TYPE=TEST_RUST_01
+      - SERIAL_NUMBER=${SERIAL_NUMBER:-1234}
+      # Performance tuning (higher = faster but more memory)
+      - VALIDATION_BATCH_SIZE=1000
+      - INFLUX_BATCH_SIZE=50000
+      - PROGRESS_LOG_INTERVAL=50
+      # Validation control
+      - SKIP_VALIDATION=false         # Skip validation entirely (NOT RECOMMENDED - causes 0 data points!)
+      - FORCE_REVALIDATE=false          # Force re-validation (ignore cache)
+      # Metric category filters (set to false to exclude that category)
+      - ENABLE_PROCESS_METRICS=false    # proc.* metrics (high cardinality, creates 10k+ columns)
+      - ENABLE_DISK_METRICS=true        # disk.* metrics
+      - ENABLE_FILE_METRICS=true        # vfs.* and filesys.* metrics
+      - ENABLE_MEMORY_METRICS=true      # mem.* metrics
+      - ENABLE_NETWORK_METRICS=true     # network.* metrics
+      - ENABLE_KERNEL_METRICS=true      # kernel.* metrics
+      - ENABLE_SWAP_METRICS=false       # swap.* metrics
+      - ENABLE_NFS_METRICS=false        # nfs.* metrics (often have PM_ERR_INDOM_LOG errors)
+      # Parser identifier for coordination
+      - PARSER_ID=rust
+    depends_on:
+      - influxdb
+    networks:
+      - pcp-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=pcp_parser_rust"
+
   web_pcp_ctrl:
     build:
       context: ./web_pcp_ctrl

@@ -1,0 +1,9 @@
+c:\Users\yashvardhan.singh\PycharmProjects\pythonProject2\PCP\src\pcp_parser_rust\target\debug\deps\libsocket2-8ccfb77e60b7b0b3.rmeta: C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src/lib.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src\sockaddr.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src\socket.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src\sockref.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src\sys\windows.rs
+
+c:\Users\yashvardhan.singh\PycharmProjects\pythonProject2\PCP\src\pcp_parser_rust\target\debug\deps\socket2-8ccfb77e60b7b0b3.d: C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src/lib.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src\sockaddr.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src\socket.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src\sockref.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src\sys\windows.rs
+
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src/lib.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src\sockaddr.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src\socket.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src\sockref.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\socket2-0.6.1\src\sys\windows.rs:

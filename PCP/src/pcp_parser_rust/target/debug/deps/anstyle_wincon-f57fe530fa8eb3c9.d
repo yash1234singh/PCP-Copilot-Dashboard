@@ -1,0 +1,8 @@
+c:\Users\yashvardhan.singh\PycharmProjects\pythonProject2\PCP\src\pcp_parser_rust\target\debug\deps\libanstyle_wincon-f57fe530fa8eb3c9.rmeta: C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\anstyle-wincon-3.0.10\src/lib.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\anstyle-wincon-3.0.10\src\ansi.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\anstyle-wincon-3.0.10\src\stream.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\anstyle-wincon-3.0.10\src\windows.rs
+
+c:\Users\yashvardhan.singh\PycharmProjects\pythonProject2\PCP\src\pcp_parser_rust\target\debug\deps\anstyle_wincon-f57fe530fa8eb3c9.d: C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\anstyle-wincon-3.0.10\src/lib.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\anstyle-wincon-3.0.10\src\ansi.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\anstyle-wincon-3.0.10\src\stream.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\anstyle-wincon-3.0.10\src\windows.rs
+
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\anstyle-wincon-3.0.10\src/lib.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\anstyle-wincon-3.0.10\src\ansi.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\anstyle-wincon-3.0.10\src\stream.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\anstyle-wincon-3.0.10\src\windows.rs:

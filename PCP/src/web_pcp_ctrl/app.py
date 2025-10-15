@@ -339,13 +339,13 @@ def update_config():
 
         logger.info(f"Updated config: PRODUCT_TYPE={product_type}, SERIAL_NUMBER={serial_number}")
 
-        # Automatically restart both parser containers
+        # Automatically restart all three parser containers
         restart_success = False
         restart_message = ""
         try:
-            # Execute docker-compose restart from /src directory for both parsers
+            # Execute docker-compose restart from /src directory for all parsers
             result = subprocess.run(
-                ['docker-compose', 'restart', 'pcp_parser_python', 'pcp_parser_go'],
+                ['docker-compose', 'restart', 'pcp_parser_python', 'pcp_parser_go', 'pcp_parser_rust'],
                 cwd='/src',
                 capture_output=True,
                 text=True,
@@ -354,8 +354,8 @@ def update_config():
 
             if result.returncode == 0:
                 restart_success = True
-                restart_message = "Configuration updated and both parser containers (Python & Go) restarted successfully."
-                logger.info("Successfully restarted pcp_parser_python and pcp_parser_go containers")
+                restart_message = "Configuration updated and all parser containers (Python, Go & Rust) restarted successfully."
+                logger.info("Successfully restarted pcp_parser_python, pcp_parser_go and pcp_parser_rust containers")
             else:
                 restart_message = f"Configuration updated but container restart failed: {result.stderr}"
                 logger.warning(f"Container restart failed: {result.stderr}")
@@ -394,6 +394,9 @@ def trigger_process():
         elif parser == 'go':
             trigger_file = Path("/src/.process_trigger_go")
             parser_name = 'Go parser'
+        elif parser == 'rust':
+            trigger_file = Path("/src/.process_trigger_rust")
+            parser_name = 'Rust parser'
         else:
             return jsonify({
                 'success': False,
@@ -435,7 +438,8 @@ def get_processing_status():
     try:
         trigger_python = Path("/src/.process_trigger_python")
         trigger_go = Path("/src/.process_trigger_go")
-        is_processing = trigger_python.exists() or trigger_go.exists()
+        trigger_rust = Path("/src/.process_trigger_rust")
+        is_processing = trigger_python.exists() or trigger_go.exists() or trigger_rust.exists()
 
         # Get latest log entries from both parsers
         python_log_file = LOG_DIR / "pcp_parser_python" / "pcp_parser.log"

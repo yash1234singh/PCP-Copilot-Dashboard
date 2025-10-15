@@ -1,0 +1,18 @@
+[package]
+name = "pcp_parser_rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.35", features = ["full"] }
+influxdb = { version = "0.7", features = ["derive"] }
+chrono = "0.4"
+csv = "1.3"
+tar = "0.4"
+xz2 = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1.0"
+futures = "0.3"
+reqwest = { version = "0.11", features = ["json"] }

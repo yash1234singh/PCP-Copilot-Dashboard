@@ -1,0 +1,9 @@
+c:\Users\yashvardhan.singh\PycharmProjects\pythonProject2\PCP\src\pcp_parser_rust\target\debug\deps\libxz2-fc3ab59c666ddafc.rmeta: C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\lib.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\stream.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\bufread.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\read.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\write.rs
+
+c:\Users\yashvardhan.singh\PycharmProjects\pythonProject2\PCP\src\pcp_parser_rust\target\debug\deps\xz2-fc3ab59c666ddafc.d: C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\lib.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\stream.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\bufread.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\read.rs C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\write.rs
+
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\lib.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\stream.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\bufread.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\read.rs:
+C:\Users\yashvardhan.singh\.cargo\registry\src\index.crates.io-6f17d22bba15001f\xz2-0.1.7\src\write.rs:
