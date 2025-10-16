@@ -50,6 +50,9 @@ type Config struct {
 	EnableKernelMetrics  bool
 	EnableSwapMetrics    bool
 	EnableNFSMetrics     bool
+
+	SaveCSVOutput   bool
+	UseMemoryBuffer bool
 }
 
 // Global metrics cache
@@ -139,6 +142,9 @@ func LoadConfig() *Config {
 		EnableKernelMetrics:  getEnvBool("ENABLE_KERNEL_METRICS", true),
 		EnableSwapMetrics:    getEnvBool("ENABLE_SWAP_METRICS", true),
 		EnableNFSMetrics:     getEnvBool("ENABLE_NFS_METRICS", false),
+
+		SaveCSVOutput:   getEnvBool("SAVE_CSV_OUTPUT", true),
+		UseMemoryBuffer: getEnvBool("USE_MEMORY_BUFFER", false),
 	}
 }
 
@@ -672,13 +678,26 @@ func exportToInfluxDB(archiveBase, archiveName string, metrics []string, config 
 
 	// Save CSV output
 	csvPath := filepath.Join(config.LogDir, fmt.Sprintf("pmrep_output_%s.csv", strings.TrimSuffix(archiveName, ".tar.xz")))
-	logger.Info(fmt.Sprintf("Saving pmrep CSV output to: %s", csvPath))
 
-	csvFile, err := os.Create(csvPath)
-	if err != nil {
-		return 0, fmt.Errorf("failed to create CSV file: %w", err)
+	var csvWriter io.Writer
+	var csvBuffer *strings.Builder
+
+	if config.UseMemoryBuffer {
+		csvBuffer = &strings.Builder{}
+		csvWriter = csvBuffer
+		logger.Info("Using in-memory buffer for CSV processing")
+	} else if config.SaveCSVOutput {
+		csvFile, err := os.Create(csvPath)
+		if err != nil {
+			return 0, fmt.Errorf("failed to create CSV file: %w", err)
+		}
+		defer csvFile.Close()
+		csvWriter = csvFile
+		logger.Info(fmt.Sprintf("Saving pmrep CSV output to: %s", csvPath))
+	} else {
+		csvWriter = nil
+		logger.Info("CSV output saving disabled (SAVE_CSV_OUTPUT=false)")
 	}
-	defer csvFile.Close()
 
 	// Read CSV and write points
 	scanner := bufio.NewScanner(stdout)
@@ -696,7 +715,9 @@ func exportToInfluxDB(archiveBase, archiveName string, metrics []string, config 
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		csvFile.WriteString(line + "\n")
+		if csvWriter != nil {
+			csvWriter.Write([]byte(line + "\n"))
+		}
 
 		if header == nil {
 			// First line is header - strip quotes from column names
@@ -796,7 +817,20 @@ func exportToInfluxDB(archiveBase, archiveName string, metrics []string, config 
 	writeAPI.Flush()
 	logger.Info("All async writes completed")
 
-	logger.Info(fmt.Sprintf("CSV output saved to: %s", csvPath))
+	// Handle CSV output saving
+	if config.UseMemoryBuffer && config.SaveCSVOutput {
+		// Write memory buffer to disk if requested
+		if err := os.WriteFile(csvPath, []byte(csvBuffer.String()), 0644); err != nil {
+			logger.Info(fmt.Sprintf("Warning: failed to save CSV from memory buffer: %v", err))
+		} else {
+			logger.Info(fmt.Sprintf("CSV output saved from memory buffer to: %s", csvPath))
+		}
+	} else if !config.UseMemoryBuffer && config.SaveCSVOutput {
+		logger.Info(fmt.Sprintf("CSV output saved to: %s", csvPath))
+	} else {
+		logger.Info("CSV processing complete (not saved to disk)")
+	}
+
 	logger.Separator("EXPORT COMPLETE")
 	logger.Info(fmt.Sprintf("Total data points written: %d", dataPoints))
 	logger.Info(fmt.Sprintf("Processed %d lines from pmrep", lineCount))

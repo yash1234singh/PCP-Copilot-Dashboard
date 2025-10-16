@@ -1036,42 +1036,240 @@ The generator script (`src/grafana/generate_dashboard.py`) automatically:
 
 See `src/grafana/DASHBOARD_README.md` for detailed documentation.
 
+## Metric Validation System
+
+### Overview
+
+The parser uses a two-stage validation system to ensure only valid, numeric time-series metrics are exported to InfluxDB.
+
+### Why Validation is Necessary
+
+PCP archives contain ~1,976 metric definitions, but not all are suitable for time-series storage:
+
+| Metric Type | Example | Why Invalid | Count |
+|-------------|---------|-------------|-------|
+| **String metrics** | `pmcd.hostname` | Returns text like "server01", not numbers | ~15 |
+| **Event metrics** | `event.flags` | Event tracing, not time-series numeric data | ~8 |
+| **Derived metrics** | Computed metrics | No raw data stored (PM_ERR_VALUE) | ~12 |
+| **Empty instances** | `proc.psinfo.*` | Per-process metrics but no processes logged | ~25 |
+| **No data** | Various | Defined but never collected in archive | ~20 |
+| **Type errors** | Various | Wrong data type for numeric export | ~8 |
+| **Other errors** | Various | PM_ERR_* errors from PCP | ~6 |
+| **Total filtered** | | | **~94** |
+| **Valid metrics** | | Numeric time-series data | **1,882** |
+
+### The Validation Process
+
+#### **Stage 1: Discovery (pminfo)**
+
+```bash
+pminfo -a /archive/20251009
+```
+
+**Output:** List of all 1,976 metric names from archive metadata
+
+**Example:**
+```
+kernel.all.load        ✅ Numeric time-series
+mem.freemem            ✅ Numeric gauge
+pmcd.hostname          ❌ String (will fail validation)
+event.flags            ❌ Event type (will fail validation)
+disk.dev.read          ✅ Numeric counter
+proc.psinfo.utime      ⚠️  May have no instances
+```
+
+#### **Stage 2: Validation Test (pmrep batch testing)**
+
+Each metric is tested to verify it can return numeric CSV data:
+
+```bash
+# Test command for each metric
+pmrep -a /archive/20251009 -s 1 -o csv --ignore-unknown <metric_name>
+```
+
+**Valid Metric Example:**
+```bash
+$ pmrep -a archive -s 1 -o csv kernel.all.load
+Time,kernel_all_load
+2025-10-09 12:00:00,1.23
+```
+✅ **Result:** Returns numeric data → Added to `validated_metrics.txt`
+
+**Invalid Metric Example:**
+```bash
+$ pmrep -a archive -s 1 -o csv pmcd.hostname
+(empty output or PM_ERR_TYPE)
+```
+❌ **Result:** No numeric data → Filtered out
+
+**Batch Optimization:**
+- Metrics tested in batches of 100 (configurable via `VALIDATION_BATCH_SIZE`)
+- If entire batch succeeds → all 100 added to valid list
+- If batch fails → test each individually to find invalid ones
+- **Time:** 76-227 seconds (Python: 216s, Go: 76s, Rust: 227s)
+
+#### **Stage 3: Category Filtering**
+
+After validation, apply user-configured category filters:
+
+```
+1,882 validated metrics
+  - Remove proc.* if ENABLE_PROCESS_METRICS=false (6 metrics)
+  - Remove swap.* if ENABLE_SWAP_METRICS=false (7 metrics)
+  - Remove nfs.* if ENABLE_NFS_METRICS=false (varies)
+  = 1,869 final metrics saved to validated_metrics.txt
+```
+
+### The Cache File: `validated_metrics.txt`
+
+**Location:** `src/logs/pcp_parser_*/validated_metrics.txt` (per parser)
+
+**Format:** Simple newline-separated list of metric names
+```
+pmda.uname
+xfs.log.writes
+kernel.all.load
+mem.freemem
+disk.dev.read
+network.interface.in.bytes
+...
+(1,869 total)
+```
+
+**Purpose:** Performance cache to avoid re-validating metrics on every archive
+
+**Behavior:**
+- **First run:** File doesn't exist → Full validation (76-227s) → Create cache
+- **Subsequent runs:** File exists → Load cache (0.01s) → Skip validation
+- **Missing/corrupted:** Auto-regenerates on next run
+- **Force refresh:** Set `FORCE_REVALIDATE=true`
+
+### Performance Impact
+
+| Scenario | Validation Time | Export Time | Total Time |
+|----------|----------------|-------------|------------|
+| **First run (no cache)** | 76-227s | 180-360s | 4-10 min |
+| **Cached runs** | 0.01s | 180-360s | 3-6 min |
+| **Speedup** | **200x faster** | Same | **20-30% faster overall** |
+
+**With SKIP_VALIDATION=true (not recommended):**
+- Validation: 0s (skipped)
+- Export: 200-400s (slower - queries 94 invalid metrics)
+- Result: Larger CSV files, more empty values, potential errors
+
+### Configuration Options
+
+#### **SKIP_VALIDATION** (⚠️ Not Recommended)
+```yaml
+- SKIP_VALIDATION=false  # Default: validate metrics
+- SKIP_VALIDATION=true   # RISKY: use all metrics without validation
+```
+
+**What it does:**
+- `false`: Test metrics with pmrep, filter out invalid ones (recommended)
+- `true`: Skip validation, use all 1,976 metrics including 94 invalid ones
+
+**Why you shouldn't skip:**
+- Wastes CPU querying metrics that return no data
+- Larger CSV files with empty columns
+- More "empty/invalid values skipped" warnings
+- Slightly slower pmrep execution
+
+#### **FORCE_REVALIDATE**
+```yaml
+- FORCE_REVALIDATE=false  # Default: use cache if available
+- FORCE_REVALIDATE=true   # Force re-validation, ignore cache
+```
+
+**When to use:**
+- After upgrading PCP version
+- After changing category filters (ENABLE_*_METRICS)
+- When archive format changes
+- Troubleshooting validation issues
+- Testing new metric configurations
+
+**After running once with `FORCE_REVALIDATE=true`, set it back to `false` for normal operation.**
+
+#### **VALIDATION_BATCH_SIZE**
+```yaml
+- VALIDATION_BATCH_SIZE=100   # Default: balanced
+- VALIDATION_BATCH_SIZE=200   # Faster validation
+- VALIDATION_BATCH_SIZE=50    # Slower, more granular error detection
+```
+
+**How it works:**
+- Tests N metrics together with single pmrep command
+- Larger batches = fewer pmrep calls = faster validation
+- Smaller batches = better error isolation = slower validation
+
+### Validation Workflow
+
+```
+START: Process Archive
+    ↓
+Does validated_metrics.txt exist?
+    ↓
+    NO → Full Validation (76-227s)
+         ├─ pminfo → discover 1,976 metrics
+         ├─ pmrep batch test → validate each metric
+         ├─ Filter out 94 invalid metrics
+         ├─ Apply category filters → 1,869 metrics
+         ├─ Save to validated_metrics.txt
+         └─ Continue to export
+    ↓
+    YES → Load Cache (0.01s)
+         ├─ Read 1,869 metric names from file
+         └─ Continue to export
+    ↓
+Export with pmrep
+    ├─ Query only validated 1,869 metrics
+    ├─ Generate CSV with numeric data
+    └─ Write to InfluxDB
+    ↓
+END: Archive processed
+```
+
+### Troubleshooting
+
+**No validated_metrics.txt file:**
+- Normal on first run
+- Auto-created after validation
+- If missing later, auto-regenerates on next archive
+
+**0 metrics validated:**
+- Check archive is valid: `pminfo -a /path/to/archive`
+- Try `FORCE_REVALIDATE=true` to rebuild cache
+- Check logs for PM_ERR_* errors
+
+**Too many metrics filtered:**
+- Review category filters (ENABLE_*_METRICS settings)
+- Check if archive has unusual metric mix
+- Verify PCP version compatibility
+
+**Validation takes too long:**
+- Increase `VALIDATION_BATCH_SIZE` to 200-500
+- Only happens once, cached for all future archives
+- Go parser is 3x faster than Python (76s vs 216s)
+
 ## Performance Tuning
 
 The PCP parser includes configurable performance parameters for optimal processing speed.
 
 ### Current Performance
 
-**Processing Speed** (with optimizations):
-- **First archive**: ~2.5 minutes (validation + export)
-- **Subsequent archives**: ~2 minutes (cached validation + export)
+**Processing Speed** (with validation cache):
 
-**Speedup**: 2-5x faster than original implementation
+| Parser | First Run (with validation) | Cached Runs | Total for 4 Archives |
+|--------|---------------------------|-------------|----------------------|
+| **Python** | 6m 55s | 1m 34s | 14m 40s |
+| **Go** | 4m 17s | 1m 19s | 10m 42s (27% faster) |
+| **Rust** | 6m 59s | 1m 26s | 14m 5s |
+
+**Speedup with cache:** 200x faster validation (0.01s vs 76-227s)
 
 ### Configuration Parameters
 
 All parameters are configurable via environment variables in `docker-compose.yml`:
-
-#### 1. FORCE_REVALIDATE (Validation Cache) ⚡
-**Default**: `false`
-
-Controls whether to use cached validated metrics or revalidate every time.
-
-```yaml
-- FORCE_REVALIDATE=false  # Use cache (fast)
-- FORCE_REVALIDATE=true   # Force revalidation (slower but thorough)
-```
-
-**How it works**:
-- **First archive**: Validates 1976 metrics, saves to cache (~50 seconds)
-- **Subsequent archives**: Loads from cache (~1 second) ⚡ **50 seconds faster**
-
-**Cache file**: `src/logs/pcp_parser/validated_metrics.txt` (1882 valid metrics)
-
-**When to force revalidation**:
-- After upgrading PCP version
-- When metrics change in your system
-- Troubleshooting validation issues
 
 #### 2. VALIDATION_BATCH_SIZE
 **Default**: `100`

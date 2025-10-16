@@ -60,6 +60,10 @@ ENABLE_KERNEL_METRICS = os.getenv("ENABLE_KERNEL_METRICS", "true").lower() == "t
 ENABLE_SWAP_METRICS = os.getenv("ENABLE_SWAP_METRICS", "true").lower() == "true"  # swap.* metrics
 ENABLE_NFS_METRICS = os.getenv("ENABLE_NFS_METRICS", "false").lower() == "true"  # nfs.* metrics (often have PM_ERR_INDOM_LOG errors)
 
+# CSV processing optimizations
+SAVE_CSV_OUTPUT = os.getenv("SAVE_CSV_OUTPUT", "true").lower() == "true"  # Save CSV files to disk
+USE_MEMORY_BUFFER = os.getenv("USE_MEMORY_BUFFER", "false").lower() == "true"  # Use in-memory CSV buffer
+
 # Global set to track metrics in memory
 _metrics_cache: Set[str] = set()
 
@@ -441,8 +445,17 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> bool:
 
         # Save CSV output to logs
         csv_output_file = LOG_DIR / f"pmrep_output_{archive_base.stem}.csv"
-        csv_file = open(csv_output_file, 'w', encoding='utf-8')
-        logger.info(f"Saving pmrep CSV output to: {csv_output_file}")
+
+        if USE_MEMORY_BUFFER:
+            import io
+            csv_file = io.StringIO()
+            logger.info(f"Using in-memory buffer for CSV processing")
+        elif SAVE_CSV_OUTPUT:
+            csv_file = open(csv_output_file, 'w', encoding='utf-8')
+            logger.info(f"Saving pmrep CSV output to: {csv_output_file}")
+        else:
+            csv_file = None
+            logger.info(f"CSV output saving disabled (SAVE_CSV_OUTPUT=false)")
 
         logger.info("Processing pmrep output...")
 
@@ -452,7 +465,8 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> bool:
                 continue
 
             # Write to CSV file
-            csv_file.write(line + '\n')
+            if csv_file is not None:
+                csv_file.write(line + '\n')
             line_count += 1
 
             # First line is header
@@ -547,8 +561,19 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> bool:
                     logger.debug(f"Error processing line {line_count}: {e}")
 
         # Close CSV file
-        csv_file.close()
-        logger.info(f"CSV output saved to: {csv_output_file}")
+        if csv_file is not None:
+            if USE_MEMORY_BUFFER and SAVE_CSV_OUTPUT:
+                # Write memory buffer to disk if requested
+                with open(csv_output_file, 'w', encoding='utf-8') as f:
+                    f.write(csv_file.getvalue())
+                logger.info(f"CSV output saved from memory buffer to: {csv_output_file}")
+            elif not USE_MEMORY_BUFFER and SAVE_CSV_OUTPUT:
+                csv_file.close()
+                logger.info(f"CSV output saved to: {csv_output_file}")
+            else:
+                logger.info(f"CSV processing complete (not saved to disk)")
+            if hasattr(csv_file, 'close'):
+                csv_file.close()
 
         # Wait for process to complete
         process.wait(timeout=300)
@@ -631,7 +656,7 @@ def process_archive(archive_path: Path, logger) -> bool:
             return False
 
         # Get sample metric values for logging
-        get_metric_values(archive_base, metrics, logger)
+        # get_metric_values(archive_base, metrics, logger)
 
         # Check InfluxDB connectivity
         check_influxdb_connection(logger)
