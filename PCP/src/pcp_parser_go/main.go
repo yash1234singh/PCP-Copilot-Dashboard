@@ -23,8 +23,9 @@ type Config struct {
 	ProcessedDir          string
 	FailedDir             string
 	LogDir                string
+	DataFilterDir         string
 	MetricsCSV            string
-	ValidatedMetricsCache string
+	ValidatedMetricsFile  string
 
 	InfluxDBURL         string
 	InfluxDBToken       string
@@ -111,15 +112,17 @@ func (l *Logger) Close() {
 // Load configuration from environment
 func LoadConfig() *Config {
 	logDir := getEnv("LOG_DIR", "/src/logs/pcp_parser_go")
+	dataFilterDir := getEnv("DATA_FILTER_DIR", "/src/input/data_filter")
 
 	return &Config{
-		WatchDir:              getEnv("WATCH_DIR", "/src/input/raw"),
-		ExtractDir:            getEnv("EXTRACT_DIR", "/tmp/pcp_archives"),
-		ProcessedDir:          getEnv("PROCESSED_DIR", "/src/archive/processed"),
-		FailedDir:             getEnv("FAILED_DIR", "/src/archive/failed"),
-		LogDir:                logDir,
-		MetricsCSV:            getEnv("METRICS_CSV", logDir+"/metrics_labels.csv"),
-		ValidatedMetricsCache: getEnv("VALIDATED_METRICS_CACHE", logDir+"/validated_metrics.txt"),
+		WatchDir:             getEnv("WATCH_DIR", "/src/input/raw"),
+		ExtractDir:           getEnv("EXTRACT_DIR", "/tmp/pcp_archives"),
+		ProcessedDir:         getEnv("PROCESSED_DIR", "/src/archive/processed"),
+		FailedDir:            getEnv("FAILED_DIR", "/src/archive/failed"),
+		LogDir:               logDir,
+		DataFilterDir:        dataFilterDir,
+		MetricsCSV:           getEnv("METRICS_CSV", logDir+"/metrics_labels.csv"),
+		ValidatedMetricsFile: getEnv("VALIDATED_METRICS_FILE", dataFilterDir+"/validated_metrics.txt"),
 
 		InfluxDBURL:         getEnv("INFLUXDB_URL", "http://influxdb:8086"),
 		InfluxDBToken:       getEnv("INFLUXDB_TOKEN", ""),
@@ -343,17 +346,17 @@ func findPCPArchive(extractDir string) (string, error) {
 	return archiveBase, nil
 }
 
-// Load validated metrics from cache
-func loadValidatedMetricsCache(cachePath string, forceRevalidate bool, logger *Logger) ([]string, error) {
+// Load validated metrics from input/data_filter directory
+func loadValidatedMetricsCache(metricsFile string, forceRevalidate bool, logger *Logger) ([]string, error) {
 	if forceRevalidate {
-		logger.Info("FORCE_REVALIDATE=true, skipping cache")
+		logger.Info("FORCE_REVALIDATE=true, skipping predefined metrics file")
 		return nil, nil
 	}
 
-	file, err := os.Open(cachePath)
+	file, err := os.Open(metricsFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			logger.Info("No validation cache found, will validate metrics")
+			logger.Info("No validated_metrics.txt found in input/data_filter, will validate metrics")
 			return nil, nil
 		}
 		return nil, err
@@ -364,7 +367,8 @@ func loadValidatedMetricsCache(cachePath string, forceRevalidate bool, logger *L
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line != "" {
+		// Skip empty lines and comments (lines starting with #)
+		if line != "" && !strings.HasPrefix(line, "#") {
 			metrics = append(metrics, line)
 		}
 	}
@@ -373,12 +377,14 @@ func loadValidatedMetricsCache(cachePath string, forceRevalidate bool, logger *L
 		return nil, err
 	}
 
-	logger.Info(fmt.Sprintf("Loaded %d validated metrics from cache", len(metrics)))
+	logger.Info(fmt.Sprintf("Loaded %d validated metrics from %s", len(metrics), metricsFile))
 	return metrics, nil
 }
 
-// Save validated metrics to cache
-func saveValidatedMetricsCache(metrics []string, cachePath string, logger *Logger) error {
+// Save validated metrics to cache (for reference only, main file is in input/data_filter)
+func saveValidatedMetricsCache(metrics []string, logDir string, logger *Logger) error {
+	// Save to logs directory for reference/debugging
+	cachePath := filepath.Join(logDir, "validated_metrics_discovered.txt")
 	file, err := os.Create(cachePath)
 	if err != nil {
 		return err
@@ -396,7 +402,8 @@ func saveValidatedMetricsCache(metrics []string, cachePath string, logger *Logge
 		return err
 	}
 
-	logger.Info(fmt.Sprintf("Saved %d validated metrics to cache", len(metrics)))
+	logger.Info(fmt.Sprintf("Saved %d discovered metrics to %s (for reference)", len(metrics), cachePath))
+	logger.Info("Note: Main validated metrics file is in input/data_filter/validated_metrics.txt")
 	return nil
 }
 
@@ -557,17 +564,17 @@ func processArchive(archivePath string, config *Config, logger *Logger) error {
 	validationStart := time.Now()
 	logger.Info("Starting metric validation...")
 
-	// Load cached validated metrics
-	validatedMetrics, err := loadValidatedMetricsCache(config.ValidatedMetricsCache, config.ForceRevalidate, logger)
+	// Load validated metrics from input/data_filter
+	validatedMetrics, err := loadValidatedMetricsCache(config.ValidatedMetricsFile, config.ForceRevalidate, logger)
 	if err != nil {
-		logger.Info(fmt.Sprintf("Warning: failed to load validation cache: %v", err))
+		logger.Info(fmt.Sprintf("Warning: failed to load validated metrics file: %v", err))
 	}
 
 	if validatedMetrics != nil {
-		logger.Info(fmt.Sprintf("Using %d cached validated metrics (skipping validation)", len(validatedMetrics)))
+		logger.Info(fmt.Sprintf("Using %d validated metrics from data_filter (skipping validation)", len(validatedMetrics)))
 	} else {
-		// No cache found - discover and validate metrics from archive
-		logger.Info("No cache found, discovering and validating metrics from archive...")
+		// No validated metrics file found - discover and validate metrics from archive
+		logger.Info("No validated_metrics.txt found, discovering and validating metrics from archive...")
 		validatedMetrics, err = discoverAndValidateMetrics(archiveBase, config, logger)
 		if err != nil {
 			return fmt.Errorf("failed to discover metrics: %w", err)
@@ -579,9 +586,9 @@ func processArchive(archivePath string, config *Config, logger *Logger) error {
 
 		logger.Info(fmt.Sprintf("Discovered and validated %d metrics", len(validatedMetrics)))
 
-		// Save to cache for future use
-		if saveErr := saveValidatedMetricsCache(validatedMetrics, config.ValidatedMetricsCache, logger); saveErr != nil {
-			logger.Info(fmt.Sprintf("Warning: failed to save cache: %v", saveErr))
+		// Save to logs for reference
+		if saveErr := saveValidatedMetricsCache(validatedMetrics, config.LogDir, logger); saveErr != nil {
+			logger.Info(fmt.Sprintf("Warning: failed to save reference file: %v", saveErr))
 		}
 	}
 

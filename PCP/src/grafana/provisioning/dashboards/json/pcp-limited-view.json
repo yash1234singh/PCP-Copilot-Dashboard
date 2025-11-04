@@ -1,0 +1,985 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "panels": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "axisPlacement": "auto"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 1
+          },
+          "id": 2,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "last"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(hinv_ncpu|hinv_physmem|hinv_pagesize|hinv_ndisk|hinv_cpu_model_name|hinv_cpu_clock|kernel_uname_release|kernel_uname_nodename|kernel_uname_distro|kernel_all_uptime)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "[SYSTEM INFORMATION & HARDWARE] Metrics 1-10 of 10",
+          "type": "timeseries"
+        }
+      ],
+      "title": "[SYSTEM INFORMATION & HARDWARE] - 10 metrics",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "id": 3,
+      "panels": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "axisPlacement": "auto"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 1
+          },
+          "id": 4,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "last"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(kernel_all_cpu_user|kernel_all_cpu_sys|kernel_all_cpu_idle|kernel_all_cpu_wait_total|kernel_all_cpu_steal|kernel_all_cpu_irq_soft|kernel_all_cpu_irq_hard|kernel_all_load|kernel_all_running|kernel_all_blocked)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "[CPU UTILIZATION & PERFORMANCE] Metrics 1-10 of 15",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "axisPlacement": "auto"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 1
+          },
+          "id": 5,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "last"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(kernel_all_pswitch|kernel_all_intr|kernel_cpu_util_user|kernel_cpu_util_sys|kernel_cpu_util_idle)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "[CPU UTILIZATION & PERFORMANCE] Metrics 11-15 of 15",
+          "type": "timeseries"
+        }
+      ],
+      "title": "[CPU UTILIZATION & PERFORMANCE] - 15 metrics",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 2
+      },
+      "id": 6,
+      "panels": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "axisPlacement": "auto"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 1
+          },
+          "id": 7,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "last"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(mem_physmem|mem_freemem|mem_util_used|mem_util_free|mem_util_cached|mem_util_bufmem|mem_util_active|mem_util_inactive|mem_util_swapTotal|mem_util_swapFree)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "[MEMORY UTILIZATION] Metrics 1-10 of 20",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "axisPlacement": "auto"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 1
+          },
+          "id": 8,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "last"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(mem_util_swapCached|mem_util_dirty|mem_util_slab|mem_util_available|mem_vmstat_pgpgin|mem_vmstat_pgpgout|mem_vmstat_pswpin|mem_vmstat_pswpout|mem_vmstat_pgfault|mem_vmstat_pgmajfault)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "[MEMORY UTILIZATION] Metrics 11-20 of 20",
+          "type": "timeseries"
+        }
+      ],
+      "title": "[MEMORY UTILIZATION] - 20 metrics",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "id": 9,
+      "panels": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "axisPlacement": "auto"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 1
+          },
+          "id": 10,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "last"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(disk_all_read|disk_all_write|disk_all_total|disk_all_read_bytes|disk_all_write_bytes|disk_all_total_bytes|disk_dev_read|disk_dev_write|disk_dev_read_bytes|disk_dev_write_bytes)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "[DISK I/O PERFORMANCE] Metrics 1-10 of 15",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "axisPlacement": "auto"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 1
+          },
+          "id": 11,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "last"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(disk_dev_avactive|disk_dev_await|disk_dev_util|disk_dev_avg_qlen|disk_dev_avg_rqsz)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "[DISK I/O PERFORMANCE] Metrics 11-15 of 15",
+          "type": "timeseries"
+        }
+      ],
+      "title": "[DISK I/O PERFORMANCE] - 15 metrics",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 12,
+      "panels": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "axisPlacement": "auto"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 1
+          },
+          "id": 13,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "last"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(filesys_capacity|filesys_used|filesys_free|filesys_full|vfs_files_count)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "[FILESYSTEM] Metrics 1-5 of 5",
+          "type": "timeseries"
+        }
+      ],
+      "title": "[FILESYSTEM] - 5 metrics",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 14,
+      "panels": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "axisPlacement": "auto"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 1
+          },
+          "id": 15,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "last"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(network_interface_in_bytes|network_interface_out_bytes|network_interface_total_bytes|network_interface_in_packets|network_interface_out_packets|network_interface_in_errors|network_interface_out_errors|network_interface_in_drops|network_interface_out_drops|network_interface_up)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "[NETWORK PERFORMANCE] Metrics 1-10 of 20",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "axisPlacement": "auto"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 1
+          },
+          "id": 16,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "last"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(network_tcp_activeopens|network_tcp_currestab|network_tcp_insegs|network_tcp_outsegs|network_tcp_retranssegs|network_udp_indatagrams|network_udp_outdatagrams|network_ip_inreceives|network_ip_outrequeststot|network_softnet_dropped)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "[NETWORK PERFORMANCE] Metrics 11-20 of 20",
+          "type": "timeseries"
+        }
+      ],
+      "title": "[NETWORK PERFORMANCE] - 20 metrics",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "id": 17,
+      "panels": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "axisPlacement": "auto"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 1
+          },
+          "id": 18,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "last"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(kernel_all_nprocs|kernel_all_sysfork|kernel_all_lastpid|kernel_all_runnable|kernel_all_nusers|vfs_inodes_free|vfs_dentry_count|ipc_shm_tot)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "[PROCESS & SYSTEM ACTIVITY] Metrics 1-8 of 8",
+          "type": "timeseries"
+        }
+      ],
+      "title": "[PROCESS & SYSTEM ACTIVITY] - 8 metrics",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "id": 19,
+      "panels": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "axisPlacement": "auto"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 1
+          },
+          "id": 20,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "last"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(psoc_now_temp_psoc|psoc_now_temp_sensor1|psoc_now_vltg_12vbus|psoc_now_cur_12vbus|psoc_now_fan_rpm|psoc_now_status_power_led|psoc_past_status_powergoodhrs)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "[THERMAL & POWER MONITORING] Metrics 1-7 of 7",
+          "type": "timeseries"
+        }
+      ],
+      "title": "[THERMAL & POWER MONITORING] - 7 metrics",
+      "type": "row"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "pcp",
+    "limited-view",
+    "curated"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb"
+        },
+        "definition": "import \"influxdata/influxdb/v1\"\nv1.tagValues(bucket: \"pcp-metrics\", tag: \"product_type\", start: -30d)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": false,
+        "name": "product_type",
+        "options": [],
+        "query": "import \"influxdata/influxdb/v1\"\nv1.tagValues(bucket: \"pcp-metrics\", tag: \"product_type\", start: -30d)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb"
+        },
+        "definition": "import \"influxdata/influxdb/v1\"\nv1.tagValues(bucket: \"pcp-metrics\", tag: \"serialNumber\", start: -30d)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": false,
+        "name": "serialNumber",
+        "options": [],
+        "query": "import \"influxdata/influxdb/v1\"\nv1.tagValues(bucket: \"pcp-metrics\", tag: \"serialNumber\", start: -30d)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "PCP Limited View Dashboard - Curated Metrics",
+  "uid": "pcp-limited-view",
+  "version": 0,
+  "weekStart": ""
+}

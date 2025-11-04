@@ -243,7 +243,9 @@ PCP/
 │   │               └── pcp-auto-dashboard.json  # Auto-generated dashboard
 │   │
 │   ├── input/                        # Input directory
-│   │   └── raw/                      # ⭐ Place .tar.xz files here (or upload via web UI)
+│   │   ├── raw/                      # ⭐ Place .tar.xz files here (or upload via web UI)
+│   │   └── data_filter/              # ⭐ Metric filtering configuration
+│   │       └── validated_metrics.txt # Pre-defined list of metrics to process
 │   │
 │   ├── archive/                      # Archive management
 │   │   ├── processed/                # Successfully processed archives
@@ -253,10 +255,10 @@ PCP/
 │       ├── grafana/
 │       ├── influxdb/
 │       └── pcp_parser/
-│           ├── pcp_parser.log        # Parser logs
-│           ├── metrics_labels.csv    # Discovered metrics
-│           ├── validated_metrics.txt # Cached validation
-│           └── pmrep_output_*.csv    # CSV output per archive
+│           ├── pcp_parser.log             # Parser logs
+│           ├── metrics_labels.csv         # Discovered metrics
+│           ├── validated_metrics_discovered.txt  # Auto-discovered metrics (reference)
+│           └── pmrep_output_*.csv         # CSV output per archive
 │
 ├── scripts/                          # Management utility scripts
 │   ├── collect_logs.sh               # Collect all container logs
@@ -947,6 +949,57 @@ Or edit `src/grafana/config/grafana.ini`:
 admin_password = your-new-password
 ```
 
+### Available Dashboards
+
+The system provides three pre-configured dashboards:
+
+#### 1. Limited View Dashboard (Recommended for Daily Use)
+**URL:** http://localhost:3000/d/pcp-limited-view/pcp-limited-view-dashboard-curated-metrics
+
+**Features:**
+- 100 carefully curated essential metrics
+- 8 organized categories
+- Clean, focused interface
+- Fast loading (20 panels)
+- Easy to customize via `input/data_filter/validated_metrics.txt`
+
+**Best for:** Daily monitoring, executive dashboards, performance overviews
+
+**Regenerate:**
+```bash
+cd src/grafana
+python generate_limited_dashboard.py
+```
+
+**Documentation:** See `src/grafana/LIMITED_VIEW_README.md`
+
+#### 2. Auto-Generated Dashboard (Comprehensive View)
+**URL:** http://localhost:3000/d/pcp-auto-metrics/pcp-auto-generated-metrics-dashboard
+
+**Features:**
+- All discovered metrics (1000+)
+- Automatically updates with new metrics
+- Hierarchical organization
+- Collapsible rows
+
+**Best for:** Detailed troubleshooting, finding specific metrics, comprehensive analysis
+
+**Regenerate:**
+```bash
+cd src/grafana
+python generate_dashboard.py
+```
+
+#### 3. Manual Dashboard (PSOC-Specific)
+**URL:** http://localhost:3000/dashboards
+
+**Features:**
+- Hand-crafted for PSOC systems
+- Custom visualizations
+- Specific metric groups
+
+**Best for:** PSOC system monitoring, custom presentations
+
 ### Adding Custom Dashboards
 
 1. Create dashboard in Grafana UI
@@ -1120,29 +1173,43 @@ After validation, apply user-configured category filters:
   = 1,869 final metrics saved to validated_metrics.txt
 ```
 
-### The Cache File: `validated_metrics.txt`
+### Validated Metrics Configuration
 
-**Location:** `src/logs/pcp_parser_*/validated_metrics.txt` (per parser)
+**Primary File:** `src/input/data_filter/validated_metrics.txt` (shared by all parsers)
 
-**Format:** Simple newline-separated list of metric names
+**Location:** Centralized configuration file that controls which metrics are processed
+
+**Format:** Simple newline-separated list of metric names with support for comments
 ```
-pmda.uname
-xfs.log.writes
-kernel.all.load
-mem.freemem
-disk.dev.read
-network.interface.in.bytes
+# System Information & Hardware
+hinv.ncpu
+hinv.physmem
+hinv.pagesize
+
+# CPU Utilization & Performance
+kernel.all.cpu.user
+kernel.all.cpu.sys
+kernel.all.cpu.idle
 ...
-(1,869 total)
+(~100 curated metrics)
 ```
 
-**Purpose:** Performance cache to avoid re-validating metrics on every archive
+**Features:**
+- **Centralized Management:** Single file controls all parsers (Python, Go, Rust)
+- **Comment Support:** Lines starting with `#` are ignored (for documentation)
+- **Curated List:** Pre-validated essential metrics (~100 most important)
+- **Easy Editing:** Modify this file to add/remove metrics without code changes
 
 **Behavior:**
-- **First run:** File doesn't exist → Full validation (76-227s) → Create cache
-- **Subsequent runs:** File exists → Load cache (0.01s) → Skip validation
-- **Missing/corrupted:** Auto-regenerates on next run
-- **Force refresh:** Set `FORCE_REVALIDATE=true`
+- **File exists:** Parsers use these metrics (0.01s load time) → No validation needed
+- **File missing:** Parsers auto-discover and validate from archive (76-227s) → Create reference file
+- **Custom metrics:** Edit file to add specific metrics you need
+- **Force refresh:** Set `FORCE_REVALIDATE=true` to ignore this file temporarily
+
+**Reference File:** `src/logs/pcp_parser_*/validated_metrics_discovered.txt`
+- Auto-generated during first run if main file doesn't exist
+- Contains all discovered metrics (for reference/debugging)
+- Not used by parsers (main file takes priority)
 
 ### Performance Impact
 
@@ -1177,16 +1244,21 @@ network.interface.in.bytes
 
 #### **FORCE_REVALIDATE**
 ```yaml
-- FORCE_REVALIDATE=false  # Default: use cache if available
-- FORCE_REVALIDATE=true   # Force re-validation, ignore cache
+- FORCE_REVALIDATE=false  # Default: use validated_metrics.txt from data_filter
+- FORCE_REVALIDATE=true   # Force re-validation, ignore data_filter file
 ```
 
 **When to use:**
+- Want to discover all available metrics in an archive
 - After upgrading PCP version
 - After changing category filters (ENABLE_*_METRICS)
 - When archive format changes
 - Troubleshooting validation issues
 - Testing new metric configurations
+
+**How it works:**
+- `false`: Read metrics from `input/data_filter/validated_metrics.txt` (instant)
+- `true`: Ignore data_filter file, discover and validate from archive (76-227s), save to logs for reference
 
 **After running once with `FORCE_REVALIDATE=true`, set it back to `false` for normal operation.**
 
@@ -1207,48 +1279,105 @@ network.interface.in.bytes
 ```
 START: Process Archive
     ↓
-Does validated_metrics.txt exist?
+Check FORCE_REVALIDATE setting
     ↓
-    NO → Full Validation (76-227s)
-         ├─ pminfo → discover 1,976 metrics
-         ├─ pmrep batch test → validate each metric
-         ├─ Filter out 94 invalid metrics
-         ├─ Apply category filters → 1,869 metrics
-         ├─ Save to validated_metrics.txt
-         └─ Continue to export
+    FALSE → Check input/data_filter/validated_metrics.txt
+         ↓
+         EXISTS → Load Curated Metrics (0.01s)
+              ├─ Read ~100 pre-validated metric names
+              ├─ Skip comments (lines starting with #)
+              └─ Continue to export
+         ↓
+         MISSING → Full Validation (76-227s)
+              ├─ pminfo → discover 1,976 metrics
+              ├─ pmrep batch test → validate each metric
+              ├─ Filter out 94 invalid metrics
+              ├─ Apply category filters → 1,869 metrics
+              ├─ Save to logs/validated_metrics_discovered.txt (reference)
+              └─ Continue to export
     ↓
-    YES → Load Cache (0.01s)
-         ├─ Read 1,869 metric names from file
+    TRUE → Force Re-validation (76-227s)
+         ├─ Ignore data_filter file
+         ├─ Full validation from archive
+         ├─ Save to logs/validated_metrics_discovered.txt
          └─ Continue to export
     ↓
 Export with pmrep
-    ├─ Query only validated 1,869 metrics
+    ├─ Query validated metrics
     ├─ Generate CSV with numeric data
     └─ Write to InfluxDB
     ↓
 END: Archive processed
 ```
 
+### Managing Validated Metrics
+
+**Customizing the Metric List:**
+
+1. **Edit the main file:**
+   ```bash
+   # Open the metrics file
+   nano src/input/data_filter/validated_metrics.txt
+
+   # Add your metrics (one per line)
+   disk.dev.read
+   disk.dev.write
+   mem.util.used
+
+   # Add comments for organization
+   ## Disk Metrics
+   disk.dev.read
+   disk.dev.write
+   ```
+
+2. **Use curated list (recommended):**
+   - File contains ~100 most important metrics
+   - Pre-validated and organized by category
+   - Comments explain each section
+   - Ready to use out of the box
+
+3. **Discover all available metrics:**
+   ```yaml
+   # Set in docker-compose.yml
+   - FORCE_REVALIDATE=true
+
+   # Restart parser
+   docker-compose restart pcp_parser_python
+
+   # Check discovered metrics
+   cat src/logs/pcp_parser_python/validated_metrics_discovered.txt
+
+   # Copy metrics you want to main file
+   # Set FORCE_REVALIDATE=false
+   ```
+
 ### Troubleshooting
 
-**No validated_metrics.txt file:**
-- Normal on first run
-- Auto-created after validation
-- If missing later, auto-regenerates on next archive
+**No validated_metrics.txt file in data_filter:**
+- Copy from `final_validated_metrics.txt` or create your own
+- Parser will auto-discover if missing (slower first run)
+- Reference file saved to logs directory
 
 **0 metrics validated:**
-- Check archive is valid: `pminfo -a /path/to/archive`
-- Try `FORCE_REVALIDATE=true` to rebuild cache
+- Check `input/data_filter/validated_metrics.txt` has valid metric names
+- Verify archive is valid: `pminfo -a /path/to/archive`
+- Try `FORCE_REVALIDATE=true` to discover metrics
 - Check logs for PM_ERR_* errors
 
+**Want different metrics:**
+- Edit `input/data_filter/validated_metrics.txt`
+- Add/remove metric names
+- Restart parser (instant - no revalidation needed)
+
 **Too many metrics filtered:**
+- Check if metrics exist in your archive: `pminfo -a archive | grep metric_name`
 - Review category filters (ENABLE_*_METRICS settings)
-- Check if archive has unusual metric mix
 - Verify PCP version compatibility
 
 **Validation takes too long:**
-- Increase `VALIDATION_BATCH_SIZE` to 200-500
-- Only happens once, cached for all future archives
+- Only happens with `FORCE_REVALIDATE=true` or missing data_filter file
+- Normal operation loads from file (0.01s)
+- Increase `VALIDATION_BATCH_SIZE` to 200-500 for faster discovery
 - Go parser is 3x faster than Python (76s vs 216s)
 
 ## Performance Tuning

@@ -1,0 +1,121 @@
+# Final Validated Metrics - Critical System Performance Parameters
+# Selected ~100 most important metrics for comprehensive system monitoring
+# Categories: CPU, Memory, Disk I/O, Network, Filesystem, System Info
+
+## SYSTEM INFORMATION & HARDWARE (10 metrics)
+hinv.ncpu
+hinv.physmem
+hinv.pagesize
+hinv.ndisk
+hinv.cpu.model_name
+hinv.cpu.clock
+kernel.uname.release
+kernel.uname.nodename
+kernel.uname.distro
+kernel.all.uptime
+
+## CPU UTILIZATION & PERFORMANCE (15 metrics)
+kernel.all.cpu.user
+kernel.all.cpu.sys
+kernel.all.cpu.idle
+kernel.all.cpu.wait.total
+kernel.all.cpu.steal
+kernel.all.cpu.irq.soft
+kernel.all.cpu.irq.hard
+kernel.all.load
+kernel.all.running
+kernel.all.blocked
+kernel.all.pswitch
+kernel.all.intr
+kernel.cpu.util.user
+kernel.cpu.util.sys
+kernel.cpu.util.idle
+
+## MEMORY UTILIZATION (20 metrics)
+mem.physmem
+mem.freemem
+mem.util.used
+mem.util.free
+mem.util.cached
+mem.util.bufmem
+mem.util.active
+mem.util.inactive
+mem.util.swapTotal
+mem.util.swapFree
+mem.util.swapCached
+mem.util.dirty
+mem.util.slab
+mem.util.available
+mem.vmstat.pgpgin
+mem.vmstat.pgpgout
+mem.vmstat.pswpin
+mem.vmstat.pswpout
+mem.vmstat.pgfault
+mem.vmstat.pgmajfault
+
+## DISK I/O PERFORMANCE (15 metrics)
+disk.all.read
+disk.all.write
+disk.all.total
+disk.all.read_bytes
+disk.all.write_bytes
+disk.all.total_bytes
+disk.dev.read
+disk.dev.write
+disk.dev.read_bytes
+disk.dev.write_bytes
+disk.dev.avactive
+disk.dev.await
+disk.dev.util
+disk.dev.avg_qlen
+disk.dev.avg_rqsz
+
+## FILESYSTEM (5 metrics)
+filesys.capacity
+filesys.used
+filesys.free
+filesys.full
+vfs.files.count
+
+## NETWORK PERFORMANCE (20 metrics)
+network.interface.in.bytes
+network.interface.out.bytes
+network.interface.total.bytes
+network.interface.in.packets
+network.interface.out.packets
+network.interface.in.errors
+network.interface.out.errors
+network.interface.in.drops
+network.interface.out.drops
+network.interface.up
+network.tcp.activeopens
+network.tcp.currestab
+network.tcp.insegs
+network.tcp.outsegs
+network.tcp.retranssegs
+network.udp.indatagrams
+network.udp.outdatagrams
+network.ip.inreceives
+network.ip.outrequeststot
+network.softnet.dropped
+
+## PROCESS & SYSTEM ACTIVITY (8 metrics)
+kernel.all.nprocs
+kernel.all.sysfork
+kernel.all.lastpid
+kernel.all.runnable
+kernel.all.nusers
+vfs.inodes.free
+vfs.dentry.count
+ipc.shm.tot
+
+## THERMAL & POWER MONITORING (7 metrics)
+psoc.now.temp.psoc
+psoc.now.temp.sensor1
+psoc.now.vltg.12vbus
+psoc.now.cur.12vbus
+psoc.now.fan.rpm
+psoc.now.status.power_led
+psoc.past.status.powergoodhrs
+
+

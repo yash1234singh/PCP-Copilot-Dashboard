@@ -27,8 +27,9 @@ EXTRACT_DIR = Path(os.getenv("EXTRACT_DIR", "/tmp/pcp_archives"))
 PROCESSED_DIR = Path(os.getenv("PROCESSED_DIR", "/src/archive/processed"))
 FAILED_DIR = Path(os.getenv("FAILED_DIR", "/src/archive/failed"))
 LOG_DIR = Path(os.getenv("LOG_DIR", "/src/logs/pcp_parser"))
+DATA_FILTER_DIR = Path(os.getenv("DATA_FILTER_DIR", "/src/input/data_filter"))
 METRICS_CSV = LOG_DIR / "metrics_labels.csv"
-VALIDATED_METRICS_CACHE = LOG_DIR / "validated_metrics.txt"
+VALIDATED_METRICS_FILE = DATA_FILTER_DIR / "validated_metrics.txt"
 
 INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://influxdb:8086")
 INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "")
@@ -168,31 +169,40 @@ def save_metric_to_csv(metric_name: str):
         writer.writerow([metric_name])
 
 def load_validated_metrics_cache(logger) -> Optional[List[str]]:
-    """Load cached validated metrics from file"""
+    """Load validated metrics from input/data_filter directory"""
     if FORCE_REVALIDATE:
-        logger.info("FORCE_REVALIDATE=true, skipping cache")
+        logger.info("FORCE_REVALIDATE=true, skipping predefined metrics file")
         return None
 
-    if not VALIDATED_METRICS_CACHE.exists():
-        logger.info("No validation cache found, will validate metrics")
+    if not VALIDATED_METRICS_FILE.exists():
+        logger.info("No validated_metrics.txt found in input/data_filter, will validate metrics")
         return None
 
     try:
-        with open(VALIDATED_METRICS_CACHE, 'r') as f:
-            cached_metrics = [line.strip() for line in f if line.strip()]
-        logger.info(f"Loaded {len(cached_metrics)} validated metrics from cache")
-        return cached_metrics
+        with open(VALIDATED_METRICS_FILE, 'r') as f:
+            # Read file and filter out comments and empty lines
+            validated_metrics = []
+            for line in f:
+                line = line.strip()
+                # Skip empty lines and comments (lines starting with #)
+                if line and not line.startswith('#'):
+                    validated_metrics.append(line)
+        logger.info(f"Loaded {len(validated_metrics)} validated metrics from {VALIDATED_METRICS_FILE}")
+        return validated_metrics
     except Exception as e:
-        logger.warning(f"Failed to load validation cache: {e}")
+        logger.warning(f"Failed to load validated metrics file: {e}")
         return None
 
 def save_validated_metrics_cache(metrics: List[str], logger):
-    """Save validated metrics to cache file"""
+    """Save validated metrics to cache file (for reference only, main file is in input/data_filter)"""
     try:
-        with open(VALIDATED_METRICS_CACHE, 'w') as f:
+        # Save to logs directory for reference/debugging
+        cache_file = LOG_DIR / "validated_metrics_discovered.txt"
+        with open(cache_file, 'w') as f:
             for metric in metrics:
                 f.write(f"{metric}\n")
-        logger.info(f"Saved {len(metrics)} validated metrics to cache")
+        logger.info(f"Saved {len(metrics)} discovered metrics to {cache_file} (for reference)")
+        logger.info(f"Note: Main validated metrics file is {VALIDATED_METRICS_FILE}")
     except Exception as e:
         logger.warning(f"Failed to save validation cache: {e}")
 

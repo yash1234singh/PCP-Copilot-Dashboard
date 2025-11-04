@@ -19,8 +19,9 @@ struct Config {
     processed_dir: PathBuf,
     failed_dir: PathBuf,
     log_dir: PathBuf,
+    data_filter_dir: PathBuf,
     metrics_csv: PathBuf,
-    validated_metrics_cache: PathBuf,
+    validated_metrics_file: PathBuf,
 
     influxdb_url: String,
     influxdb_token: String,
@@ -51,6 +52,7 @@ struct Config {
 impl Config {
     fn from_env() -> Result<Self> {
         let log_dir = PathBuf::from(env::var("LOG_DIR").unwrap_or_else(|_| "/src/logs/pcp_parser_rust".to_string()));
+        let data_filter_dir = PathBuf::from(env::var("DATA_FILTER_DIR").unwrap_or_else(|_| "/src/input/data_filter".to_string()));
 
         Ok(Config {
             watch_dir: PathBuf::from(env::var("WATCH_DIR").unwrap_or_else(|_| "/src/input/raw".to_string())),
@@ -58,8 +60,9 @@ impl Config {
             processed_dir: PathBuf::from(env::var("PROCESSED_DIR").unwrap_or_else(|_| "/src/archive/processed".to_string())),
             failed_dir: PathBuf::from(env::var("FAILED_DIR").unwrap_or_else(|_| "/src/archive/failed".to_string())),
             log_dir: log_dir.clone(),
+            data_filter_dir: data_filter_dir.clone(),
             metrics_csv: log_dir.join("metrics_labels.csv"),
-            validated_metrics_cache: log_dir.join("validated_metrics.txt"),
+            validated_metrics_file: data_filter_dir.join("validated_metrics.txt"),
 
             influxdb_url: env::var("INFLUXDB_URL").unwrap_or_else(|_| "http://influxdb:8086".to_string()),
             influxdb_token: env::var("INFLUXDB_TOKEN").unwrap_or_default(),
@@ -283,35 +286,38 @@ fn find_pcp_archive(extract_dir: &Path) -> Result<PathBuf> {
     Err(anyhow::anyhow!("No PCP archive found (no .meta file)"))
 }
 
-/// Load validated metrics from cache
-fn load_validated_metrics_cache(cache_path: &Path, force_revalidate: bool) -> Result<Option<Vec<String>>> {
+/// Load validated metrics from input/data_filter directory
+fn load_validated_metrics_cache(metrics_file: &Path, force_revalidate: bool) -> Result<Option<Vec<String>>> {
     if force_revalidate {
-        info!("FORCE_REVALIDATE=true, skipping cache");
+        info!("FORCE_REVALIDATE=true, skipping predefined metrics file");
         return Ok(None);
     }
 
-    if !cache_path.exists() {
-        info!("No validation cache found, will validate metrics");
+    if !metrics_file.exists() {
+        info!("No validated_metrics.txt found in input/data_filter, will validate metrics");
         return Ok(None);
     }
 
-    let file = File::open(cache_path)?;
+    let file = File::open(metrics_file)?;
     let reader = BufReader::new(file);
 
     let metrics: Vec<String> = reader
         .lines()
         .filter_map(|line| line.ok())
         .map(|line| line.trim().to_string())
-        .filter(|line| !line.is_empty())
+        // Skip empty lines and comments (lines starting with #)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
         .collect();
 
-    info!("Loaded {} validated metrics from cache", metrics.len());
+    info!("Loaded {} validated metrics from {:?}", metrics.len(), metrics_file);
     Ok(Some(metrics))
 }
 
-/// Save validated metrics to cache
-fn save_validated_metrics_cache(metrics: &[String], cache_path: &Path) -> Result<()> {
-    let file = File::create(cache_path)?;
+/// Save validated metrics to cache (for reference only, main file is in input/data_filter)
+fn save_validated_metrics_cache(metrics: &[String], log_dir: &Path) -> Result<()> {
+    // Save to logs directory for reference/debugging
+    let cache_path = log_dir.join("validated_metrics_discovered.txt");
+    let file = File::create(&cache_path)?;
     let mut writer = BufWriter::new(file);
 
     for metric in metrics {
@@ -319,7 +325,8 @@ fn save_validated_metrics_cache(metrics: &[String], cache_path: &Path) -> Result
     }
 
     writer.flush()?;
-    info!("Saved {} validated metrics to cache", metrics.len());
+    info!("Saved {} discovered metrics to {:?} (for reference)", metrics.len(), cache_path);
+    info!("Note: Main validated metrics file is in input/data_filter/validated_metrics.txt");
 
     Ok(())
 }
@@ -763,14 +770,14 @@ async fn process_archive(archive_path: &Path, config: &Config, metrics_cache: &m
     let validation_start = Instant::now();
     info!("Starting metric validation...");
 
-    // Load cached validated metrics
-    let validated_metrics = match load_validated_metrics_cache(&config.validated_metrics_cache, config.force_revalidate)? {
+    // Load validated metrics from input/data_filter
+    let validated_metrics = match load_validated_metrics_cache(&config.validated_metrics_file, config.force_revalidate)? {
         Some(metrics) => {
-            info!("Using {} cached validated metrics (skipping validation)", metrics.len());
+            info!("Using {} validated metrics from data_filter (skipping validation)", metrics.len());
             metrics
         }
         None => {
-            info!("No cache found, discovering and validating metrics from archive...");
+            info!("No validated_metrics.txt found, discovering and validating metrics from archive...");
             let metrics = discover_and_validate_metrics(&archive_base, config)?;
 
             if metrics.is_empty() {
@@ -779,9 +786,9 @@ async fn process_archive(archive_path: &Path, config: &Config, metrics_cache: &m
 
             info!("Discovered and validated {} metrics", metrics.len());
 
-            // Save to cache
-            if let Err(e) = save_validated_metrics_cache(&metrics, &config.validated_metrics_cache) {
-                warn!("Failed to save validation cache: {}", e);
+            // Save to logs for reference
+            if let Err(e) = save_validated_metrics_cache(&metrics, &config.log_dir) {
+                warn!("Failed to save reference file: {}", e);
             }
 
             metrics
