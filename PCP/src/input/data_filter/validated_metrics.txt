@@ -99,12 +99,14 @@ network.ip.inreceives
 network.ip.outrequeststot
 network.softnet.dropped
 
-## PROCESS & SYSTEM ACTIVITY (8 metrics)
+## PROCESS & SYSTEM ACTIVITY (9 metrics)
 kernel.all.nprocs
 kernel.all.sysfork
 kernel.all.lastpid
 kernel.all.runnable
 kernel.all.nusers
+# Special handling: Only Running (R) and Blocked (D) states exported
+proc.psinfo.sname
 vfs.inodes.free
 vfs.dentry.count
 ipc.shm.tot

@@ -841,6 +841,732 @@
         "x": 0,
         "y": 7
       },
+      "id": 21,
+      "panels": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto",
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "process_name"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 400
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "pid"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "state_description"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 120
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 12,
+            "x": 0,
+            "y": 1
+          },
+          "id": 22,
+          "options": {
+            "showHeader": true,
+            "footer": {
+              "show": false,
+              "reducer": ["sum"],
+              "fields": ""
+            }
+          },
+          "pluginVersion": "9.5.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"proc_psinfo_sname\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"state\"] == \"R\")\n  |> last()\n  |> keep(columns: [\"process_name\", \"pid\", \"state\", \"_value\", \"_time\"])\n  |> rename(columns: {_value: \"state_description\"})\n  |> sort(columns: [\"process_name\"], desc: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "Running Processes (State: R)",
+          "type": "table",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "_time": true,
+                  "state": true
+                },
+                "indexByName": {
+                  "process_name": 0,
+                  "pid": 1,
+                  "state_description": 2
+                },
+                "renameByName": {
+                  "process_name": "Process Name",
+                  "pid": "PID",
+                  "state_description": "State"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto",
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "process_name"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 400
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "pid"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "state_description"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 120
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 12,
+            "x": 12,
+            "y": 1
+          },
+          "id": 23,
+          "options": {
+            "showHeader": true,
+            "footer": {
+              "show": false,
+              "reducer": ["sum"],
+              "fields": ""
+            }
+          },
+          "pluginVersion": "9.5.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"proc_psinfo_sname\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"state\"] == \"D\")\n  |> last()\n  |> keep(columns: [\"process_name\", \"pid\", \"state\", \"_value\", \"_time\"])\n  |> rename(columns: {_value: \"state_description\"})\n  |> sort(columns: [\"process_name\"], desc: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "Blocked Processes (State: D)",
+          "type": "table",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "_time": true,
+                  "state": true
+                },
+                "indexByName": {
+                  "process_name": 0,
+                  "pid": 1,
+                  "state_description": 2
+                },
+                "renameByName": {
+                  "process_name": "Process Name",
+                  "pid": "PID",
+                  "state_description": "State"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto",
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "process_name"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 400
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "pid"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "state_description"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 120
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 12,
+            "x": 0,
+            "y": 11
+          },
+          "id": 24,
+          "options": {
+            "showHeader": true,
+            "footer": {
+              "show": false,
+              "reducer": ["sum"],
+              "fields": ""
+            }
+          },
+          "pluginVersion": "9.5.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"proc_psinfo_sname\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"state\"] == \"S\")\n  |> last()\n  |> keep(columns: [\"process_name\", \"pid\", \"state\", \"_value\", \"_time\"])\n  |> rename(columns: {_value: \"state_description\"})\n  |> sort(columns: [\"process_name\"], desc: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "Sleeping Processes (State: S)",
+          "type": "table",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "_time": true,
+                  "state": true
+                },
+                "indexByName": {
+                  "process_name": 0,
+                  "pid": 1,
+                  "state_description": 2
+                },
+                "renameByName": {
+                  "process_name": "Process Name",
+                  "pid": "PID",
+                  "state_description": "State"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto",
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "process_name"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 400
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "pid"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "state_description"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 120
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 12,
+            "x": 12,
+            "y": 11
+          },
+          "id": 25,
+          "options": {
+            "showHeader": true,
+            "footer": {
+              "show": false,
+              "reducer": ["sum"],
+              "fields": ""
+            }
+          },
+          "pluginVersion": "9.5.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"proc_psinfo_sname\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"state\"] == \"I\")\n  |> last()\n  |> keep(columns: [\"process_name\", \"pid\", \"state\", \"_value\", \"_time\"])\n  |> rename(columns: {_value: \"state_description\"})\n  |> sort(columns: [\"process_name\"], desc: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "Idle Processes (State: I)",
+          "type": "table",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "_time": true,
+                  "state": true
+                },
+                "indexByName": {
+                  "process_name": 0,
+                  "pid": 1,
+                  "state_description": 2
+                },
+                "renameByName": {
+                  "process_name": "Process Name",
+                  "pid": "PID",
+                  "state_description": "State"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto",
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "process_name"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 400
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "pid"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "state_description"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 120
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 12,
+            "x": 0,
+            "y": 21
+          },
+          "id": 26,
+          "options": {
+            "showHeader": true,
+            "footer": {
+              "show": false,
+              "reducer": ["sum"],
+              "fields": ""
+            }
+          },
+          "pluginVersion": "9.5.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"proc_psinfo_sname\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"state\"] == \"Z\")\n  |> last()\n  |> keep(columns: [\"process_name\", \"pid\", \"state\", \"_value\", \"_time\"])\n  |> rename(columns: {_value: \"state_description\"})\n  |> sort(columns: [\"process_name\"], desc: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "Zombie Processes (State: Z)",
+          "type": "table",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "_time": true,
+                  "state": true
+                },
+                "indexByName": {
+                  "process_name": 0,
+                  "pid": 1,
+                  "state_description": 2
+                },
+                "renameByName": {
+                  "process_name": "Process Name",
+                  "pid": "PID",
+                  "state_description": "State"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto",
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "process_name"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 400
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "pid"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "state_description"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 120
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 12,
+            "x": 12,
+            "y": 21
+          },
+          "id": 27,
+          "options": {
+            "showHeader": true,
+            "footer": {
+              "show": false,
+              "reducer": ["sum"],
+              "fields": ""
+            }
+          },
+          "pluginVersion": "9.5.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "influxdb"
+              },
+              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"proc_psinfo_sname\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"state\"] == \"T\")\n  |> last()\n  |> keep(columns: [\"process_name\", \"pid\", \"state\", \"_value\", \"_time\"])\n  |> rename(columns: {_value: \"state_description\"})\n  |> sort(columns: [\"process_name\"], desc: false)",
+              "refId": "A"
+            }
+          ],
+          "title": "Stopped Processes (State: T)",
+          "type": "table",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "_time": true,
+                  "state": true
+                },
+                "indexByName": {
+                  "process_name": 0,
+                  "pid": 1,
+                  "state_description": 2
+                },
+                "renameByName": {
+                  "process_name": "Process Name",
+                  "pid": "PID",
+                  "state_description": "State"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "title": "[PROCESS STATES] All Process States (R, D, S, I, Z, T)",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
       "id": 19,
       "panels": [
         {

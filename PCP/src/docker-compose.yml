@@ -21,6 +21,11 @@ services:
       - DOCKER_INFLUXDB_INIT_BUCKET=pcp-metrics
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=pcp-admin-token-12345
       - INFLUXDB_HTTP_AUTH_ENABLED=true
+      # Write performance tuning
+      - INFLUXDB_DATA_CACHE_MAX_MEMORY_SIZE=2147483648  # 2GB cache for better write performance
+      - INFLUXDB_DATA_WAL_FSYNC_DELAY=1s  # Batch WAL writes (reduces disk I/O)
+      - INFLUXDB_HTTP_WRITE_TIMEOUT=300s  # Increase timeout for large batches
+      - INFLUXDB_HTTP_MAX_BODY_SIZE=100000000  # 100MB max request body
     networks:
       - pcp-network
     restart: unless-stopped
@@ -77,6 +82,8 @@ services:
 
   # Python PCP Parser (original implementation)
   pcp_parser_python:
+    #profiles:
+    #  - python-parser
     build:
       context: ./pcp_parser
       dockerfile: Dockerfile
@@ -99,7 +106,7 @@ services:
       - PRODUCT_TYPE=${PRODUCT_TYPE:-SERVER1}
       - SERIAL_NUMBER=${SERIAL_NUMBER:-1234}
       - VALIDATION_BATCH_SIZE=500
-      - INFLUX_BATCH_SIZE=100000
+      - INFLUX_BATCH_SIZE=200000
       - PROGRESS_LOG_INTERVAL=50
       - SKIP_VALIDATION=false
       - FORCE_REVALIDATE=false
@@ -130,6 +137,8 @@ services:
 
   # Go PCP Parser (new implementation)
   pcp_parser_go:
+    profiles:
+      - go-parser
     build:
       context: ./pcp_parser_go
       dockerfile: Dockerfile
@@ -155,7 +164,7 @@ services:
       - SERIAL_NUMBER=${SERIAL_NUMBER:-1234}
       # Performance tuning (higher = faster but more memory)
       - VALIDATION_BATCH_SIZE=500
-      - INFLUX_BATCH_SIZE=100000
+      - INFLUX_BATCH_SIZE=200000
       - PROGRESS_LOG_INTERVAL=50
       # Validation control
       - SKIP_VALIDATION=false         # Skip validation entirely (NOT RECOMMENDED - causes 0 data points!)
@@ -171,7 +180,7 @@ services:
       - ENABLE_NFS_METRICS=false        # nfs.* metrics (often have PM_ERR_INDOM_LOG errors)
       # CSV processing optimizations
       - SAVE_CSV_OUTPUT=false
-      - USE_MEMORY_BUFFER=true
+      - USE_MEMORY_BUFFER=false
       # Parser identifier for coordination
       - PARSER_ID=go
     depends_on:
@@ -188,6 +197,8 @@ services:
 
   # Rust PCP Parser (new implementation)
   pcp_parser_rust:
+    profiles:
+      - rust-parser
     build:
       context: ./pcp_parser_rust
       dockerfile: Dockerfile
@@ -213,10 +224,10 @@ services:
       - SERIAL_NUMBER=${SERIAL_NUMBER:-1234}
       # Performance tuning (higher = faster but more memory)
       - VALIDATION_BATCH_SIZE=1000
-      - INFLUX_BATCH_SIZE=50000
+      - INFLUX_BATCH_SIZE=200000
       - PROGRESS_LOG_INTERVAL=50
       # Validation control
-      - SKIP_VALIDATION=true         # Skip validation entirely (NOT RECOMMENDED - causes 0 data points!)
+      - SKIP_VALIDATION=false         # Skip validation entirely (NOT RECOMMENDED - causes 0 data points!)
       - FORCE_REVALIDATE=false          # Force re-validation (ignore cache)
       # Metric category filters (set to false to exclude that category)
       - ENABLE_PROCESS_METRICS=false    # proc.* metrics (high cardinality, creates 10k+ columns)
