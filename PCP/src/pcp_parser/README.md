@@ -60,7 +60,7 @@ The PCP monitoring system supports **three parser implementations**:
 
 ### Core Capabilities
 - **Multi-metric support**: Processes validated metrics from configuration file
-- **InfluxDB integration**: Direct export to InfluxDB v2 with proper schema
+- **InfluxDB 3 Core integration**: Direct export to InfluxDB 3 Core with SQL-compatible schema
 - **CSV export**: Optional CSV output for offline analysis
 - **Parallel processing**: Process metrics in parallel for 30-50% faster execution
 - **Process state tracking**: Monitor running, blocked, zombie, and stopped processes
@@ -83,7 +83,7 @@ The parser can track process states including:
 
 - Docker and Docker Compose
 - PCP archives to process
-- InfluxDB v2 instance
+- InfluxDB 3 Core instance
 - Validated metrics configuration file
 
 ### Running the Parser
@@ -126,11 +126,11 @@ ENABLE_PYTHON_PARSER=true   # Default: enabled
 ENABLE_GO_PARSER=false      # Default: disabled
 ENABLE_RUST_PARSER=false    # Default: disabled
 
-# InfluxDB Configuration
-INFLUXDB_URL=http://influxdb:8086
-INFLUXDB_TOKEN=your-token-here
-INFLUXDB_ORG=your-org
-INFLUXDB_BUCKET=pcp-metrics
+# InfluxDB 3 Core Configuration
+INFLUXDB_URL=http://influxdb3-core:8181
+INFLUXDB_TOKEN=apiv3_YOUR_TOKEN_HERE
+INFLUXDB_DATABASE=pcp-metrics
+INFLUXDB_MEASUREMENT=pcp_metrics
 
 # Product Information
 PRODUCT_TYPE=PCP
@@ -667,69 +667,64 @@ proc_psinfo_sname,product_type=PCP,serialNumber=SN001,process_name=/opt/app/work
 
 #### Query All Running Processes
 
-```flux
-from(bucket: "pcp-metrics")
-  |> range(start: -1h)
-  |> filter(fn: (r) => r["_measurement"] == "proc_psinfo_sname")
-  |> filter(fn: (r) => r["state"] == "R")
-  |> last()
+```sql
+SELECT * FROM proc_psinfo_sname
+WHERE time > now() - INTERVAL '1 hour'
+  AND state = 'R'
+ORDER BY time DESC
+LIMIT 100
 ```
 
 #### Query All Blocked Processes
 
-```flux
-from(bucket: "pcp-metrics")
-  |> range(start: -1h)
-  |> filter(fn: (r) => r["_measurement"] == "proc_psinfo_sname")
-  |> filter(fn: (r) => r["state"] == "D")
-  |> last()
+```sql
+SELECT * FROM proc_psinfo_sname
+WHERE time > now() - INTERVAL '1 hour'
+  AND state = 'D'
+ORDER BY time DESC
+LIMIT 100
 ```
 
 #### Query Specific Process by Name
 
-```flux
-from(bucket: "pcp-metrics")
-  |> range(start: -1h)
-  |> filter(fn: (r) => r["_measurement"] == "proc_psinfo_sname")
-  |> filter(fn: (r) => r["process_name"] =~ /python/)
-  |> last()
+```sql
+SELECT * FROM proc_psinfo_sname
+WHERE time > now() - INTERVAL '1 hour'
+  AND process_name LIKE '%python%'
+ORDER BY time DESC
+LIMIT 100
 ```
 
 #### Count Processes by State
 
-```flux
-from(bucket: "pcp-metrics")
-  |> range(start: -1h)
-  |> filter(fn: (r) => r["_measurement"] == "proc_psinfo_sname")
-  |> group(columns: ["state"])
-  |> count()
+```sql
+SELECT state, COUNT(*) as process_count
+FROM proc_psinfo_sname
+WHERE time > now() - INTERVAL '1 hour'
+GROUP BY state
+ORDER BY process_count DESC
 ```
 
 #### Find Zombie Processes
 
-```flux
-from(bucket: "pcp-metrics")
-  |> range(start: -1h)
-  |> filter(fn: (r) => r["_measurement"] == "proc_psinfo_sname")
-  |> filter(fn: (r) => r["state"] == "Z")
-  |> last()
+```sql
+SELECT * FROM proc_psinfo_sname
+WHERE time > now() - INTERVAL '1 hour'
+  AND state = 'Z'
+ORDER BY time DESC
+LIMIT 100
 ```
 
 #### Alert: Too Many Blocked Processes
 
 Condition: More than 20 processes in D state
 
-```flux
-from(bucket: "pcp-metrics")
-  |> range(start: -5m)
-  |> filter(fn: (r) => r["_measurement"] == "proc_psinfo_sname")
-  |> filter(fn: (r) => r["state"] == "D")
-  |> count()
-  |> map(fn: (r) => ({
-      _time: r._time,
-      _value: r._value,
-      _level: if r._value > 20 then "crit" else "ok"
-    }))
+```sql
+SELECT COUNT(*) as blocked_count
+FROM proc_psinfo_sname
+WHERE time > now() - INTERVAL '5 minutes'
+  AND state = 'D'
+HAVING COUNT(*) > 20
 ```
 
 ---

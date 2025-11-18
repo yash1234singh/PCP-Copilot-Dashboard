@@ -1,0 +1,25 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB3
+    type: influxdb
+    uid: influxdb3-sql
+    access: proxy
+    url: http://influxdb3-core:8181
+    user:
+    password:
+    database: pcp-metrics
+    basicAuth: false
+    isDefault: true
+    jsonData:
+      httpMode: POST
+      version: SQL
+      dbName: pcp-metrics
+      tlsSkipVerify: true
+      tlsAuthWithCACert: false
+      httpHeaderName1: Authorization
+    secureJsonData:
+      token: ${__file:/admin_token:token}
+      httpHeaderValue1: Bearer ${__file:/admin_token:token}
+    version: 1
+    editable: true

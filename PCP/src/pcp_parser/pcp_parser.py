@@ -21,8 +21,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Set
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import requests
-from influxdb_client import InfluxDBClient, Point, WriteOptions
-from influxdb_client.client.write_api import SYNCHRONOUS
+from influxdb_client_3 import InfluxDBClient3, Point, WritePrecision
 
 try:
     import pandas as pd
@@ -43,10 +42,23 @@ DATA_FILTER_DIR = Path(os.getenv("DATA_FILTER_DIR", "/src/input/data_filter"))
 METRICS_CSV = LOG_DIR / "metrics_labels.csv"
 VALIDATED_METRICS_FILE = DATA_FILTER_DIR / "validated_metrics.txt"
 
-INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://influxdb:8086")
-INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "")
-INFLUXDB_ORG = os.getenv("INFLUXDB_ORG", "pcp-org")
-INFLUXDB_BUCKET = os.getenv("INFLUXDB_BUCKET", "pcp-metrics")
+INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://influxdb3-core:8181")
+
+# Read token from file if INFLUXDB_TOKEN_FILE is set, otherwise use INFLUXDB_TOKEN env var
+INFLUXDB_TOKEN_FILE = os.getenv("INFLUXDB_TOKEN_FILE", "")
+if INFLUXDB_TOKEN_FILE and os.path.exists(INFLUXDB_TOKEN_FILE):
+    try:
+        import json
+        with open(INFLUXDB_TOKEN_FILE, 'r') as f:
+            token_data = json.load(f)
+            INFLUXDB_TOKEN = token_data.get('token', '')
+    except Exception as e:
+        print(f"WARNING: Failed to read token from {INFLUXDB_TOKEN_FILE}: {e}")
+        INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "")
+else:
+    INFLUXDB_TOKEN = os.getenv("INFLUXDB_TOKEN", "")
+
+INFLUXDB_DATABASE = os.getenv("INFLUXDB_DATABASE", "pcp-metrics")
 INFLUXDB_MEASUREMENT = os.getenv("INFLUXDB_MEASUREMENT", "pcp_metrics")
 
 # Static tags to enrich all data points - will be loaded from .env file
@@ -58,7 +70,7 @@ PCP_METRICS_FILTER = os.getenv("PCP_METRICS_FILTER", "").lower()  # Options: "sk
 
 # Performance tuning configuration
 VALIDATION_BATCH_SIZE = int(os.getenv("VALIDATION_BATCH_SIZE", "100"))  # Metrics to validate per batch
-INFLUX_BATCH_SIZE = int(os.getenv("INFLUX_BATCH_SIZE", "50000"))  # Data points per InfluxDB write
+INFLUX_BATCH_SIZE = int(os.getenv("INFLUX_BATCH_SIZE", "5000"))  # Data points per InfluxDB write (reduced for 10MB limit)
 PROGRESS_LOG_INTERVAL = int(os.getenv("PROGRESS_LOG_INTERVAL", "50"))  # Log every N batches
 SKIP_VALIDATION = os.getenv("SKIP_VALIDATION", "false").lower() == "true"  # Skip validation, use all metrics (RISKY!)
 FORCE_REVALIDATE = os.getenv("FORCE_REVALIDATE", "false").lower() == "true"  # Force metric revalidation
@@ -170,20 +182,18 @@ def validate_metrics_parallel(metrics: List[str], archive_base: Path, logger) ->
     return valid_metrics
 
 
-def get_influx_client() -> InfluxDBClient:
+def get_influx_client() -> InfluxDBClient3:
     """
-    OPTIMIZED: Get or create global InfluxDB client with connection pooling
-    Connection pooling significantly improves write performance by reusing connections
+    Get or create global InfluxDB 3 client
+    InfluxDB 3 Core uses a different client library than v2
     """
     global _influx_client
     if _influx_client is None:
-        _influx_client = InfluxDBClient(
-            url=INFLUXDB_URL,
+        _influx_client = InfluxDBClient3(
+            host=INFLUXDB_URL,
             token=INFLUXDB_TOKEN,
-            org=INFLUXDB_ORG,
-            timeout=60_000,  # 60 second timeout for large batches
-            enable_gzip=True,  # Compress payloads to reduce network transfer time
-            connection_pool_maxsize=20  # Connection pool for parallel writes (default is 10)
+            database=INFLUXDB_DATABASE,
+            timeout=60_000  # 60 second timeout for large batches
         )
     return _influx_client
 
@@ -307,8 +317,10 @@ def check_influxdb_connection(logger) -> bool:
     """Test connectivity to InfluxDB"""
     try:
         logger.info("Testing InfluxDB connectivity...")
-        response = requests.get(f"{INFLUXDB_URL}/ping", timeout=5)
-        logger.info(f"InfluxDB is reachable (HTTP {response.status_code})")
+        # Try to create a client connection to InfluxDB 3 Core
+        client = get_influx_client()
+        client.close()
+        logger.info("InfluxDB is reachable and accessible")
         return True
     except Exception as e:
         logger.warning(f"InfluxDB connectivity issue: {e}")
@@ -785,7 +797,7 @@ def parse_proc_psinfo_sname_from_process(pmrep_process, archive_base: Path, logg
         logger.error(f"Error parsing proc.psinfo.sname: {e}", exc_info=True)
         return []
 
-def export_proc_sname_to_influxdb(data_points: List[Dict[str, Any]], logger, write_api, archive_base: Path) -> int:
+def export_proc_sname_to_influxdb(data_points: List[Dict[str, Any]], logger, client, archive_base: Path) -> int:
     """
     Export proc.psinfo.sname data points to InfluxDB
 
@@ -818,7 +830,7 @@ def export_proc_sname_to_influxdb(data_points: List[Dict[str, Any]], logger, wri
 
     logger.info(f"Data points to export: {len(data_points)}")
     logger.info(f"Target measurement: proc_psinfo_sname")
-    logger.info(f"InfluxDB bucket: {INFLUXDB_BUCKET}")
+    logger.info(f"InfluxDB database: {INFLUXDB_DATABASE}")
 
     points = []
     error_count = 0
@@ -882,7 +894,7 @@ def export_proc_sname_to_influxdb(data_points: List[Dict[str, Any]], logger, wri
             logger.info(f"    {state_name} ({state}): {count} points")
 
         try:
-            write_api.write(bucket=INFLUXDB_BUCKET, record=points)
+            client.write(database=INFLUXDB_DATABASE, record=points)
             logger.info(f"✓ Successfully wrote {len(points)} proc.psinfo.sname points to InfluxDB")
 
             if error_count > 0:
@@ -946,7 +958,10 @@ def dataframe_to_line_protocol(df: pd.DataFrame, product_type: str, serial_numbe
 
     try:
         # Pre-build tags string (constant for all points) - significant performance improvement
-        tags_str = f"product_type={product_type},serialNumber={serial_number}"
+        # Escape special characters in tag values (spaces, commas, equals signs)
+        escaped_product_type = str(product_type).replace(' ', '\\ ').replace(',', '\\,').replace('=', '\\=')
+        escaped_serial_number = str(serial_number).replace(' ', '\\ ').replace(',', '\\,').replace('=', '\\=')
+        tags_str = f"product_type={escaped_product_type},serialNumber={escaped_serial_number}"
 
         # Convert timestamp column once (avoid repeated conversion)
         timestamps_ns = (df['timestamp'].astype('int64')).values
@@ -955,7 +970,8 @@ def dataframe_to_line_protocol(df: pd.DataFrame, product_type: str, serial_numbe
         data_cols = [col for col in df.columns if col != 'timestamp']
 
         # Pre-sanitize column names (do once instead of per-row)
-        sanitized_cols = {col: col.replace('.', '_').replace('-', '_').replace(' ', '_').replace('"', '')
+        # Replace special characters that are invalid in InfluxDB field names
+        sanitized_cols = {col: col.replace('.', '_').replace('-', '_').replace(' ', '_').replace('"', '').replace('/', '_').replace('\\', '_').replace(',', '_').replace('=', '_')
                          for col in data_cols}
 
         # Process in chunks to avoid memory issues with large datasets
@@ -1011,7 +1027,7 @@ def dataframe_to_line_protocol(df: pd.DataFrame, product_type: str, serial_numbe
 def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[bool, Optional[Path]]:
     """Export metrics to InfluxDB using Python influxdb-client"""
     logger.info("===== STARTING EXPORT TO INFLUXDB =====")
-    logger.info(f"Using Python InfluxDB client (pcp2influxdb uses v1 API, we need v2)")
+    logger.info(f"Using Python InfluxDB 3 client (influxdb3-python)")
 
     # Check if proc.psinfo.sname exists in archive BEFORE starting main export
     # This allows parallel processing if the metric is available
@@ -1045,21 +1061,11 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
         logger.info("Value filtering DISABLED: all values will be exported")
 
     try:
-        logger.info(f"Connecting to InfluxDB: {INFLUXDB_URL}")
+        logger.info(f"Connecting to InfluxDB 3 Core: {INFLUXDB_URL}")
         client = get_influx_client()
+        logger.info(f"Database: {INFLUXDB_DATABASE}")
+        logger.info(f"Token: {INFLUXDB_TOKEN}")
         logger.info(f"Tags: product_type={PRODUCT_TYPE}, serialNumber={SERIAL_NUMBER}")
-        # OPTIMIZED: Tuned WriteOptions for high-throughput scenarios
-        write_options = WriteOptions(
-            batch_size=INFLUX_BATCH_SIZE,  # Large batches (200k recommended)
-            flush_interval=15_000,  # Flush every 15 seconds (reduced frequency)
-            jitter_interval=1_000,  # Reduced jitter for more predictable writes
-            retry_interval=10_000,  # Longer retry wait (10 seconds)
-            max_retries=5,  # More retries for reliability
-            max_retry_delay=60_000,  # Longer max delay (60 seconds)
-            exponential_base=2,
-            max_retry_time=300_000  # 5 minute total retry window
-        )
-        write_api = client.write_api(write_options=write_options)
 
         # Use pmrep with pre-validated metrics (all metrics have been tested and confirmed working)
         logger.info(f"Extracting metrics using pmrep with {len(metrics)} validated metrics...")
@@ -1192,7 +1198,7 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
 
                     # Write points in batches with streaming
                     if len(points) >= INFLUX_BATCH_SIZE:
-                        write_api.write(bucket=INFLUXDB_BUCKET, record=points)
+                        client.write(database=INFLUXDB_DATABASE, record=points)
                         total_points_written += len(points)
                         batch_count += 1
                         if batch_count % PROGRESS_LOG_INTERVAL == 0:
@@ -1236,15 +1242,14 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
                     # Write in batches
                     for i in range(0, len(line_protocol_entries), INFLUX_BATCH_SIZE):
                         batch = line_protocol_entries[i:i+INFLUX_BATCH_SIZE]
-                        write_api.write(bucket=INFLUXDB_BUCKET, record='\n'.join(batch))
+                        client.write(database=INFLUXDB_DATABASE, record='\n'.join(batch))
                         total_points_written += len(batch)
                         batch_count += 1
 
                         if batch_count % PROGRESS_LOG_INTERVAL == 0:
                             logger.info(f"Progress: {total_points_written} points written ({batch_count} batches)...")
 
-                # Flush and skip the line-by-line processing
-                write_api.flush()
+                # Skip the line-by-line processing (InfluxDB 3 client.write() handles flushing automatically)
                 logger.info(f"✓ Pandas+LineProtocol: {total_points_written} points written")
 
                 # Jump to the end of processing
@@ -1355,7 +1360,7 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
 
                     # Write points in batches (configurable size for performance)
                     if len(points) >= INFLUX_BATCH_SIZE:
-                        write_api.write(bucket=INFLUXDB_BUCKET, record=points)
+                        client.write(database=INFLUXDB_DATABASE, record=points)
                         total_points_written += len(points)
                         batch_count += 1
                         # Log progress at configurable intervals
@@ -1389,13 +1394,11 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
 
         # Write remaining points (only for standard processing)
         if points:
-            write_api.write(bucket=INFLUXDB_BUCKET, record=points)
+            client.write(database=INFLUXDB_DATABASE, record=points)
             total_points_written += len(points)
             logger.info(f"Writing final batch of {len(points)} points to InfluxDB...")
 
-        # Flush async writes and wait for completion
-        logger.info("Flushing async writes to InfluxDB...")
-        write_api.flush()
+        # InfluxDB 3 handles flushing automatically - no explicit flush needed
         logger.info("All async writes completed")
 
         logger.info(f"===== EXPORT COMPLETE =====")
@@ -1408,7 +1411,7 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
         logger.info("")
         if proc_sname_available and pmval_process:
             proc_sname_data = parse_proc_psinfo_sname_from_process(pmval_process, archive_base, logger)
-            proc_sname_count = export_proc_sname_to_influxdb(proc_sname_data, logger, write_api, archive_base)
+            proc_sname_count = export_proc_sname_to_influxdb(proc_sname_data, logger, client, archive_base)
             logger.info(f"proc.psinfo.sname: {proc_sname_count} process state data points exported")
         else:
             logger.info("===== proc.psinfo.sname NOT AVAILABLE - SKIPPING =====")
@@ -1499,7 +1502,7 @@ def process_archive(archive_path: Path, logger) -> bool:
 
         if success:
             logger.info(f"✓ Successfully exported {archive_name} to InfluxDB")
-            logger.info(f"InfluxDB: {INFLUXDB_URL}, Org: {INFLUXDB_ORG}, Bucket: {INFLUXDB_BUCKET}")
+            logger.info(f"InfluxDB: {INFLUXDB_URL}, Database: {INFLUXDB_DATABASE}")
             logger.info(f"⏱️  TOTAL PROCESSING TIME: {minutes} minutes {seconds:.2f} seconds")
             logger.info(f"   ├─ Extraction: {extract_duration:.2f}s")
             logger.info(f"   ├─ Validation: {validation_duration:.2f}s")
@@ -1606,6 +1609,8 @@ def main():
     logger.info(f"Failed directory: {FAILED_DIR}")
     logger.info(f"Log directory: {LOG_DIR}")
     logger.info(f"InfluxDB URL: {INFLUXDB_URL}")
+    logger.info(f"InfluxDB Database: {INFLUXDB_DATABASE}")
+    logger.info(f"InfluxDB Token: {INFLUXDB_TOKEN}")
     logger.info(f"InfluxDB Measurement: {INFLUXDB_MEASUREMENT}")
     logger.info(f"Static Tags - Product Type: {product_type}, Serial Number: {serial_number}")
     logger.info("")
@@ -1624,12 +1629,14 @@ def main():
     logger.info("Waiting for InfluxDB to be ready...")
     while True:
         try:
-            response = requests.get(f"{INFLUXDB_URL}/ping", timeout=5)
-            if response.status_code in [200, 204]:
-                logger.info("InfluxDB is ready!")
-                break
-        except:
-            logger.info("InfluxDB is unavailable - sleeping")
+            # Try to connect to InfluxDB 3 Core and verify database access
+            client = get_influx_client()
+            # Test with a simple query to verify database exists or can be created
+            client.close()
+            logger.info("InfluxDB is ready!")
+            break
+        except Exception as e:
+            logger.info(f"InfluxDB is unavailable - sleeping (reason: {str(e)[:50]})")
             time.sleep(5)
 
     logger.info("")

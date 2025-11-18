@@ -22,7 +22,7 @@
         {
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb"
+            "uid": "influxdb3-sql"
           },
           "fieldConfig": {
             "defaults": {
@@ -76,10 +76,12 @@
             {
               "datasource": {
                 "type": "influxdb",
-                "uid": "influxdb"
+                "uid": "influxdb3-sql"
               },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(hinv_ncpu|hinv_physmem|hinv_pagesize|hinv_ndisk|hinv_cpu_model_name|hinv_cpu_clock|kernel_uname_release|kernel_uname_nodename|kernel_uname_distro|kernel_all_uptime)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-              "refId": "A"
+              "rawSql": "SELECT time, hinv_ncpu, hinv_physmem, hinv_pagesize, hinv_ndisk, hinv_cpu_model_name, hinv_cpu_clock_cpu0, hinv_cpu_clock_cpu1, hinv_cpu_clock_cpu2, hinv_cpu_clock_cpu3, hinv_cpu_clock_cpu4, hinv_cpu_clock_cpu5, hinv_cpu_clock_cpu6, hinv_cpu_clock_cpu7, kernel_uname_release, kernel_uname_nodename, kernel_uname_distro, kernel_all_uptime FROM pcp_metrics WHERE product_type = '$product_type' AND \"serialNumber\" = '$serialNumber' AND time >= $__timeFrom AND time <= $__timeTo ORDER BY time",
+              "refId": "A",
+              "format": "time_series",
+              "hide": false
             }
           ],
           "title": "[SYSTEM INFORMATION & HARDWARE] Metrics 1-10 of 10",
@@ -102,7 +104,7 @@
         {
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb"
+            "uid": "influxdb3-sql"
           },
           "fieldConfig": {
             "defaults": {
@@ -156,10 +158,12 @@
             {
               "datasource": {
                 "type": "influxdb",
-                "uid": "influxdb"
+                "uid": "influxdb3-sql"
               },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(kernel_all_cpu_user|kernel_all_cpu_sys|kernel_all_cpu_idle|kernel_all_cpu_wait_total|kernel_all_cpu_steal|kernel_all_cpu_irq_soft|kernel_all_cpu_irq_hard|kernel_all_load|kernel_all_running|kernel_all_blocked)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-              "refId": "A"
+              "rawSql": "SELECT time, kernel_all_cpu_user, kernel_all_cpu_sys, kernel_all_cpu_idle, kernel_all_cpu_wait_total, kernel_all_cpu_steal, kernel_all_cpu_irq_soft, kernel_all_cpu_irq_hard, kernel_all_load_15_minute, kernel_all_load_1_minute, kernel_all_load_5_minute, kernel_all_running, kernel_all_blocked FROM pcp_metrics WHERE product_type = '$product_type' AND \"serialNumber\" = '$serialNumber' AND time >= $__timeFrom AND time <= $__timeTo ORDER BY time",
+              "refId": "A",
+              "format": "time_series",
+              "hide": false
             }
           ],
           "title": "[CPU UTILIZATION & PERFORMANCE] Metrics 1-10 of 15",
@@ -168,7 +172,7 @@
         {
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb"
+            "uid": "influxdb3-sql"
           },
           "fieldConfig": {
             "defaults": {
@@ -222,10 +226,12 @@
             {
               "datasource": {
                 "type": "influxdb",
-                "uid": "influxdb"
+                "uid": "influxdb3-sql"
               },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(kernel_all_pswitch|kernel_all_intr|kernel_cpu_util_user|kernel_cpu_util_sys|kernel_cpu_util_idle)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-              "refId": "A"
+              "rawSql": "SELECT time, kernel_all_pswitch, kernel_all_intr, kernel_cpu_util_user, kernel_cpu_util_sys, kernel_cpu_util_idle FROM pcp_metrics WHERE product_type = '$product_type' AND \"serialNumber\" = '$serialNumber' AND time >= $__timeFrom AND time <= $__timeTo ORDER BY time",
+              "refId": "A",
+              "format": "time_series",
+              "hide": false
             }
           ],
           "title": "[CPU UTILIZATION & PERFORMANCE] Metrics 11-15 of 15",
@@ -248,7 +254,7 @@
         {
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb"
+            "uid": "influxdb3-sql"
           },
           "fieldConfig": {
             "defaults": {
@@ -302,10 +308,12 @@
             {
               "datasource": {
                 "type": "influxdb",
-                "uid": "influxdb"
+                "uid": "influxdb3-sql"
               },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(mem_physmem|mem_freemem|mem_util_used|mem_util_free|mem_util_cached|mem_util_bufmem|mem_util_active|mem_util_inactive|mem_util_swapTotal|mem_util_swapFree)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-              "refId": "A"
+              "rawSql": "SELECT time, mem_physmem, mem_freemem, mem_util_used, mem_util_free, mem_util_cached, mem_util_bufmem, mem_util_active, mem_util_inactive, mem_util_swapTotal, mem_util_swapFree FROM pcp_metrics WHERE product_type = '$product_type' AND \"serialNumber\" = '$serialNumber' AND time >= $__timeFrom AND time <= $__timeTo ORDER BY time",
+              "refId": "A",
+              "format": "time_series",
+              "hide": false
             }
           ],
           "title": "[MEMORY UTILIZATION] Metrics 1-10 of 20",
@@ -314,7 +322,7 @@
         {
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb"
+            "uid": "influxdb3-sql"
           },
           "fieldConfig": {
             "defaults": {
@@ -368,10 +376,12 @@
             {
               "datasource": {
                 "type": "influxdb",
-                "uid": "influxdb"
+                "uid": "influxdb3-sql"
               },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(mem_util_swapCached|mem_util_dirty|mem_util_slab|mem_util_available|mem_vmstat_pgpgin|mem_vmstat_pgpgout|mem_vmstat_pswpin|mem_vmstat_pswpout|mem_vmstat_pgfault|mem_vmstat_pgmajfault)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-              "refId": "A"
+              "rawSql": "SELECT time, mem_util_swapCached, mem_util_dirty, mem_util_slab, mem_util_available, mem_vmstat_pgpgin, mem_vmstat_pgpgout, mem_vmstat_pswpin, mem_vmstat_pswpout, mem_vmstat_pgfault, mem_vmstat_pgmajfault FROM pcp_metrics WHERE product_type = '$product_type' AND \"serialNumber\" = '$serialNumber' AND time >= $__timeFrom AND time <= $__timeTo ORDER BY time",
+              "refId": "A",
+              "format": "time_series",
+              "hide": false
             }
           ],
           "title": "[MEMORY UTILIZATION] Metrics 11-20 of 20",
@@ -394,7 +404,7 @@
         {
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb"
+            "uid": "influxdb3-sql"
           },
           "fieldConfig": {
             "defaults": {
@@ -448,10 +458,12 @@
             {
               "datasource": {
                 "type": "influxdb",
-                "uid": "influxdb"
+                "uid": "influxdb3-sql"
               },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(disk_all_read|disk_all_write|disk_all_total|disk_all_read_bytes|disk_all_write_bytes|disk_all_total_bytes|disk_dev_read|disk_dev_write|disk_dev_read_bytes|disk_dev_write_bytes)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-              "refId": "A"
+              "rawSql": "SELECT time, disk_all_read, disk_all_write, disk_all_total, disk_all_read_bytes, disk_all_write_bytes, disk_all_total_bytes, disk_dev_read, disk_dev_write, disk_dev_read_bytes, disk_dev_write_bytes FROM pcp_metrics WHERE product_type = '$product_type' AND \"serialNumber\" = '$serialNumber' AND time >= $__timeFrom AND time <= $__timeTo ORDER BY time",
+              "refId": "A",
+              "format": "time_series",
+              "hide": false
             }
           ],
           "title": "[DISK I/O PERFORMANCE] Metrics 1-10 of 15",
@@ -460,7 +472,7 @@
         {
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb"
+            "uid": "influxdb3-sql"
           },
           "fieldConfig": {
             "defaults": {
@@ -514,10 +526,12 @@
             {
               "datasource": {
                 "type": "influxdb",
-                "uid": "influxdb"
+                "uid": "influxdb3-sql"
               },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(disk_dev_avactive|disk_dev_await|disk_dev_util|disk_dev_avg_qlen|disk_dev_avg_rqsz)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-              "refId": "A"
+              "rawSql": "SELECT time, disk_dev_avactive, disk_dev_await, disk_dev_util, disk_dev_avg_qlen, disk_dev_avg_rqsz FROM pcp_metrics WHERE product_type = '$product_type' AND \"serialNumber\" = '$serialNumber' AND time >= $__timeFrom AND time <= $__timeTo ORDER BY time",
+              "refId": "A",
+              "format": "time_series",
+              "hide": false
             }
           ],
           "title": "[DISK I/O PERFORMANCE] Metrics 11-15 of 15",
@@ -540,7 +554,7 @@
         {
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb"
+            "uid": "influxdb3-sql"
           },
           "fieldConfig": {
             "defaults": {
@@ -594,10 +608,12 @@
             {
               "datasource": {
                 "type": "influxdb",
-                "uid": "influxdb"
+                "uid": "influxdb3-sql"
               },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(filesys_capacity|filesys_used|filesys_free|filesys_full|vfs_files_count)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-              "refId": "A"
+              "rawSql": "SELECT time, filesys_capacity_/dev/mapper/vg_jaguar_log, filesys_capacity_/dev/mapper/vg_jaguar_var, filesys_capacity_/dev/root, filesys_capacity_/dev/sda1, filesys_used, filesys_free, filesys_full_/dev/mapper/vg_jaguar_log, filesys_full_/dev/mapper/vg_jaguar_var, filesys_full_/dev/root, filesys_full_/dev/sda1, vfs_files_count FROM pcp_metrics WHERE product_type = '$product_type' AND \"serialNumber\" = '$serialNumber' AND time >= $__timeFrom AND time <= $__timeTo ORDER BY time",
+              "refId": "A",
+              "format": "time_series",
+              "hide": false
             }
           ],
           "title": "[FILESYSTEM] Metrics 1-5 of 5",
@@ -620,7 +636,7 @@
         {
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb"
+            "uid": "influxdb3-sql"
           },
           "fieldConfig": {
             "defaults": {
@@ -674,10 +690,12 @@
             {
               "datasource": {
                 "type": "influxdb",
-                "uid": "influxdb"
+                "uid": "influxdb3-sql"
               },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(network_interface_in_bytes|network_interface_out_bytes|network_interface_total_bytes|network_interface_in_packets|network_interface_out_packets|network_interface_in_errors|network_interface_out_errors|network_interface_in_drops|network_interface_out_drops|network_interface_up)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-              "refId": "A"
+              "rawSql": "SELECT time, network_interface_in_bytes, network_interface_out_bytes, network_interface_total_bytes, network_interface_in_packets, network_interface_out_packets, network_interface_in_errors, network_interface_out_errors, network_interface_in_drops, network_interface_out_drops, network_interface_up_bear_gogo, network_interface_up_eth0, network_interface_up_int_maint, network_interface_up_lo, network_interface_up_vlan100, network_interface_up_vlan_bear_gogo, network_interface_up_wlan0, network_interface_up_wlan1 FROM pcp_metrics WHERE product_type = '$product_type' AND \"serialNumber\" = '$serialNumber' AND time >= $__timeFrom AND time <= $__timeTo ORDER BY time",
+              "refId": "A",
+              "format": "time_series",
+              "hide": false
             }
           ],
           "title": "[NETWORK PERFORMANCE] Metrics 1-10 of 20",
@@ -686,7 +704,7 @@
         {
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb"
+            "uid": "influxdb3-sql"
           },
           "fieldConfig": {
             "defaults": {
@@ -740,10 +758,12 @@
             {
               "datasource": {
                 "type": "influxdb",
-                "uid": "influxdb"
+                "uid": "influxdb3-sql"
               },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(network_tcp_activeopens|network_tcp_currestab|network_tcp_insegs|network_tcp_outsegs|network_tcp_retranssegs|network_udp_indatagrams|network_udp_outdatagrams|network_ip_inreceives|network_ip_outrequeststot|network_softnet_dropped)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-              "refId": "A"
+              "rawSql": "SELECT time, network_tcp_activeopens, network_tcp_currestab, network_tcp_insegs, network_tcp_outsegs, network_tcp_retranssegs, network_udp_indatagrams, network_udp_outdatagrams, network_ip_inreceives, network_ip_outrequeststot, network_softnet_dropped FROM pcp_metrics WHERE product_type = '$product_type' AND \"serialNumber\" = '$serialNumber' AND time >= $__timeFrom AND time <= $__timeTo ORDER BY time",
+              "refId": "A",
+              "format": "time_series",
+              "hide": false
             }
           ],
           "title": "[NETWORK PERFORMANCE] Metrics 11-20 of 20",
@@ -766,7 +786,7 @@
         {
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb"
+            "uid": "influxdb3-sql"
           },
           "fieldConfig": {
             "defaults": {
@@ -820,17 +840,19 @@
             {
               "datasource": {
                 "type": "influxdb",
-                "uid": "influxdb"
+                "uid": "influxdb3-sql"
               },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(kernel_all_nprocs|kernel_all_sysfork|kernel_all_lastpid|kernel_all_runnable|kernel_all_nusers|vfs_inodes_free|vfs_dentry_count|ipc_shm_tot)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-              "refId": "A"
+              "rawSql": "SELECT time, kernel_all_nprocs, kernel_all_sysfork, kernel_all_lastpid, kernel_all_runnable, kernel_all_nusers, proc_psinfo_sname, vfs_inodes_free, vfs_dentry_count, ipc_shm_tot FROM pcp_metrics WHERE product_type = '$product_type' AND \"serialNumber\" = '$serialNumber' AND time >= $__timeFrom AND time <= $__timeTo ORDER BY time",
+              "refId": "A",
+              "format": "time_series",
+              "hide": false
             }
           ],
-          "title": "[PROCESS & SYSTEM ACTIVITY] Metrics 1-8 of 8",
+          "title": "[PROCESS & SYSTEM ACTIVITY] Metrics 1-9 of 9",
           "type": "timeseries"
         }
       ],
-      "title": "[PROCESS & SYSTEM ACTIVITY] - 8 metrics",
+      "title": "[PROCESS & SYSTEM ACTIVITY] - 9 metrics",
       "type": "row"
     },
     {
@@ -841,738 +863,12 @@
         "x": 0,
         "y": 7
       },
-      "id": 21,
-      "panels": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "custom": {
-                "align": "auto",
-                "displayMode": "auto",
-                "inspect": false
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              }
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "process_name"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 400
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "pid"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 100
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "state_description"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 120
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": {
-            "h": 10,
-            "w": 12,
-            "x": 0,
-            "y": 1
-          },
-          "id": 22,
-          "options": {
-            "showHeader": true,
-            "footer": {
-              "show": false,
-              "reducer": ["sum"],
-              "fields": ""
-            }
-          },
-          "pluginVersion": "9.5.3",
-          "targets": [
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "influxdb"
-              },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"proc_psinfo_sname\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"state\"] == \"R\")\n  |> last()\n  |> keep(columns: [\"process_name\", \"pid\", \"state\", \"_value\", \"_time\"])\n  |> rename(columns: {_value: \"state_description\"})\n  |> sort(columns: [\"process_name\"], desc: false)",
-              "refId": "A"
-            }
-          ],
-          "title": "Running Processes (State: R)",
-          "type": "table",
-          "transformations": [
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "_time": true,
-                  "state": true
-                },
-                "indexByName": {
-                  "process_name": 0,
-                  "pid": 1,
-                  "state_description": 2
-                },
-                "renameByName": {
-                  "process_name": "Process Name",
-                  "pid": "PID",
-                  "state_description": "State"
-                }
-              }
-            }
-          ]
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "custom": {
-                "align": "auto",
-                "displayMode": "auto",
-                "inspect": false
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 1
-                  }
-                ]
-              }
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "process_name"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 400
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "pid"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 100
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "state_description"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 120
-                  },
-                  {
-                    "id": "color",
-                    "value": {
-                      "mode": "fixed",
-                      "fixedColor": "red"
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": {
-            "h": 10,
-            "w": 12,
-            "x": 12,
-            "y": 1
-          },
-          "id": 23,
-          "options": {
-            "showHeader": true,
-            "footer": {
-              "show": false,
-              "reducer": ["sum"],
-              "fields": ""
-            }
-          },
-          "pluginVersion": "9.5.3",
-          "targets": [
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "influxdb"
-              },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"proc_psinfo_sname\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"state\"] == \"D\")\n  |> last()\n  |> keep(columns: [\"process_name\", \"pid\", \"state\", \"_value\", \"_time\"])\n  |> rename(columns: {_value: \"state_description\"})\n  |> sort(columns: [\"process_name\"], desc: false)",
-              "refId": "A"
-            }
-          ],
-          "title": "Blocked Processes (State: D)",
-          "type": "table",
-          "transformations": [
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "_time": true,
-                  "state": true
-                },
-                "indexByName": {
-                  "process_name": 0,
-                  "pid": 1,
-                  "state_description": 2
-                },
-                "renameByName": {
-                  "process_name": "Process Name",
-                  "pid": "PID",
-                  "state_description": "State"
-                }
-              }
-            }
-          ]
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "custom": {
-                "align": "auto",
-                "displayMode": "auto",
-                "inspect": false
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              }
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "process_name"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 400
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "pid"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 100
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "state_description"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 120
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": {
-            "h": 10,
-            "w": 12,
-            "x": 0,
-            "y": 11
-          },
-          "id": 24,
-          "options": {
-            "showHeader": true,
-            "footer": {
-              "show": false,
-              "reducer": ["sum"],
-              "fields": ""
-            }
-          },
-          "pluginVersion": "9.5.3",
-          "targets": [
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "influxdb"
-              },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"proc_psinfo_sname\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"state\"] == \"S\")\n  |> last()\n  |> keep(columns: [\"process_name\", \"pid\", \"state\", \"_value\", \"_time\"])\n  |> rename(columns: {_value: \"state_description\"})\n  |> sort(columns: [\"process_name\"], desc: false)",
-              "refId": "A"
-            }
-          ],
-          "title": "Sleeping Processes (State: S)",
-          "type": "table",
-          "transformations": [
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "_time": true,
-                  "state": true
-                },
-                "indexByName": {
-                  "process_name": 0,
-                  "pid": 1,
-                  "state_description": 2
-                },
-                "renameByName": {
-                  "process_name": "Process Name",
-                  "pid": "PID",
-                  "state_description": "State"
-                }
-              }
-            }
-          ]
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "custom": {
-                "align": "auto",
-                "displayMode": "auto",
-                "inspect": false
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              }
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "process_name"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 400
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "pid"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 100
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "state_description"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 120
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": {
-            "h": 10,
-            "w": 12,
-            "x": 12,
-            "y": 11
-          },
-          "id": 25,
-          "options": {
-            "showHeader": true,
-            "footer": {
-              "show": false,
-              "reducer": ["sum"],
-              "fields": ""
-            }
-          },
-          "pluginVersion": "9.5.3",
-          "targets": [
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "influxdb"
-              },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"proc_psinfo_sname\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"state\"] == \"I\")\n  |> last()\n  |> keep(columns: [\"process_name\", \"pid\", \"state\", \"_value\", \"_time\"])\n  |> rename(columns: {_value: \"state_description\"})\n  |> sort(columns: [\"process_name\"], desc: false)",
-              "refId": "A"
-            }
-          ],
-          "title": "Idle Processes (State: I)",
-          "type": "table",
-          "transformations": [
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "_time": true,
-                  "state": true
-                },
-                "indexByName": {
-                  "process_name": 0,
-                  "pid": 1,
-                  "state_description": 2
-                },
-                "renameByName": {
-                  "process_name": "Process Name",
-                  "pid": "PID",
-                  "state_description": "State"
-                }
-              }
-            }
-          ]
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "custom": {
-                "align": "auto",
-                "displayMode": "auto",
-                "inspect": false
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "orange",
-                    "value": 1
-                  }
-                ]
-              }
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "process_name"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 400
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "pid"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 100
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "state_description"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 120
-                  },
-                  {
-                    "id": "color",
-                    "value": {
-                      "mode": "fixed",
-                      "fixedColor": "orange"
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": {
-            "h": 10,
-            "w": 12,
-            "x": 0,
-            "y": 21
-          },
-          "id": 26,
-          "options": {
-            "showHeader": true,
-            "footer": {
-              "show": false,
-              "reducer": ["sum"],
-              "fields": ""
-            }
-          },
-          "pluginVersion": "9.5.3",
-          "targets": [
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "influxdb"
-              },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"proc_psinfo_sname\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"state\"] == \"Z\")\n  |> last()\n  |> keep(columns: [\"process_name\", \"pid\", \"state\", \"_value\", \"_time\"])\n  |> rename(columns: {_value: \"state_description\"})\n  |> sort(columns: [\"process_name\"], desc: false)",
-              "refId": "A"
-            }
-          ],
-          "title": "Zombie Processes (State: Z)",
-          "type": "table",
-          "transformations": [
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "_time": true,
-                  "state": true
-                },
-                "indexByName": {
-                  "process_name": 0,
-                  "pid": 1,
-                  "state_description": 2
-                },
-                "renameByName": {
-                  "process_name": "Process Name",
-                  "pid": "PID",
-                  "state_description": "State"
-                }
-              }
-            }
-          ]
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "custom": {
-                "align": "auto",
-                "displayMode": "auto",
-                "inspect": false
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              }
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "process_name"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 400
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "pid"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 100
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "state_description"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 120
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": {
-            "h": 10,
-            "w": 12,
-            "x": 12,
-            "y": 21
-          },
-          "id": 27,
-          "options": {
-            "showHeader": true,
-            "footer": {
-              "show": false,
-              "reducer": ["sum"],
-              "fields": ""
-            }
-          },
-          "pluginVersion": "9.5.3",
-          "targets": [
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "influxdb"
-              },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"proc_psinfo_sname\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"state\"] == \"T\")\n  |> last()\n  |> keep(columns: [\"process_name\", \"pid\", \"state\", \"_value\", \"_time\"])\n  |> rename(columns: {_value: \"state_description\"})\n  |> sort(columns: [\"process_name\"], desc: false)",
-              "refId": "A"
-            }
-          ],
-          "title": "Stopped Processes (State: T)",
-          "type": "table",
-          "transformations": [
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "_time": true,
-                  "state": true
-                },
-                "indexByName": {
-                  "process_name": 0,
-                  "pid": 1,
-                  "state_description": 2
-                },
-                "renameByName": {
-                  "process_name": "Process Name",
-                  "pid": "PID",
-                  "state_description": "State"
-                }
-              }
-            }
-          ]
-        }
-      ],
-      "title": "[PROCESS STATES] All Process States (R, D, S, I, Z, T)",
-      "type": "row"
-    },
-    {
-      "collapsed": true,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 8
-      },
       "id": 19,
       "panels": [
         {
           "datasource": {
             "type": "influxdb",
-            "uid": "influxdb"
+            "uid": "influxdb3-sql"
           },
           "fieldConfig": {
             "defaults": {
@@ -1626,10 +922,12 @@
             {
               "datasource": {
                 "type": "influxdb",
-                "uid": "influxdb"
+                "uid": "influxdb3-sql"
               },
-              "query": "from(bucket: \"pcp-metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pcp_metrics\")\n  |> filter(fn: (r) => r[\"product_type\"] =~ /${product_type}/)\n  |> filter(fn: (r) => r[\"serialNumber\"] =~ /${serialNumber}/)\n  |> filter(fn: (r) => r[\"_field\"] =~ /^(psoc_now_temp_psoc|psoc_now_temp_sensor1|psoc_now_vltg_12vbus|psoc_now_cur_12vbus|psoc_now_fan_rpm|psoc_now_status_power_led|psoc_past_status_powergoodhrs)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-              "refId": "A"
+              "rawSql": "SELECT time, psoc_now_temp_psoc, psoc_now_temp_sensor1, psoc_now_vltg_12vbus, psoc_now_cur_12vbus, psoc_now_fan_rpm, psoc_now_status_power_led, psoc_past_status_powergoodhrs FROM pcp_metrics WHERE product_type = '$product_type' AND \"serialNumber\" = '$serialNumber' AND time >= $__timeFrom AND time <= $__timeTo ORDER BY time",
+              "refId": "A",
+              "format": "time_series",
+              "hide": false
             }
           ],
           "title": "[THERMAL & POWER MONITORING] Metrics 1-7 of 7",
@@ -1658,15 +956,15 @@
         },
         "datasource": {
           "type": "influxdb",
-          "uid": "influxdb"
+          "uid": "influxdb3-sql"
         },
-        "definition": "import \"influxdata/influxdb/v1\"\nv1.tagValues(bucket: \"pcp-metrics\", tag: \"product_type\", start: -30d)",
+        "definition": "SELECT DISTINCT product_type FROM pcp_metrics",
         "hide": 0,
         "includeAll": true,
         "multi": false,
         "name": "product_type",
         "options": [],
-        "query": "import \"influxdata/influxdb/v1\"\nv1.tagValues(bucket: \"pcp-metrics\", tag: \"product_type\", start: -30d)",
+        "query": "SELECT DISTINCT product_type FROM pcp_metrics",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
@@ -1681,15 +979,15 @@
         },
         "datasource": {
           "type": "influxdb",
-          "uid": "influxdb"
+          "uid": "influxdb3-sql"
         },
-        "definition": "import \"influxdata/influxdb/v1\"\nv1.tagValues(bucket: \"pcp-metrics\", tag: \"serialNumber\", start: -30d)",
+        "definition": "SELECT DISTINCT \"serialNumber\" FROM pcp_metrics",
         "hide": 0,
         "includeAll": true,
         "multi": false,
         "name": "serialNumber",
         "options": [],
-        "query": "import \"influxdata/influxdb/v1\"\nv1.tagValues(bucket: \"pcp-metrics\", tag: \"serialNumber\", start: -30d)",
+        "query": "SELECT DISTINCT \"serialNumber\" FROM pcp_metrics",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,

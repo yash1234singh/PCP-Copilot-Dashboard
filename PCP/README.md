@@ -66,9 +66,9 @@ This project provides a complete monitoring solution for PCP (Performance Co-Pil
 │                                                                   │
 │  ┌────────────────────────────────────────────────────────┐    │
 │  │  4. INFLUXDB EXPORT                                     │    │
-│  │     - Async batch writes (50k points/batch)            │    │
+│  │     - Batched writes (5k points/batch, 10MB limit)     │    │
 │  │     - Adds static tags (product_type, serialNumber)    │    │
-│  │     - Parallel processing with retry logic             │    │
+│  │     - Line protocol format with retry logic            │    │
 │  └────────────────────────────────────────────────────────┘    │
 │                                                                   │
 │  ┌────────────────────────────────────────────────────────┐    │
@@ -160,30 +160,54 @@ Output: 300-1870 validated metrics
 
 ### Containers
 
-1. **InfluxDB** (`influxdb:2.7-alpine`)
+1. **influxdb3-init** (`alpine:latest`)
+   - **Automated Initialization Container** - Runs on every startup to configure InfluxDB stack
+   - **Smart Token Management**:
+     - Reuses existing token from `logs/influxdb/.admin_token` if valid
+     - Generates new token if missing or invalid (10-year expiry)
+     - Synchronizes `.env` file with token
+     - Creates `logs/influxdb/config.json` for Explorer UI auto-configuration
+   - **Database Setup**:
+     - Waits for InfluxDB 3 Core (infinite timeout with progress updates)
+     - Creates `pcp-metrics` database using InfluxDB CLI
+     - Verifies and displays database list (fails if database not created)
+   - **Container Orchestration**:
+     - Restarts dependent containers when token changes
+     - Profile-aware: only restarts running containers
+   - Exits after initialization (restart: no)
+
+2. **InfluxDB 3 Core** (`influxdb:3-core`)
    - Time-series database for storing metrics
-   - Port: 8086
-   - Organization: pcp-org
-   - Bucket: pcp-metrics
+   - Port: 8181 (API-only, no web UI)
+   - Database: pcp-metrics (auto-created by influxdb3-init)
+   - Token-based authentication via `logs/influxdb/.admin_token`
    - Health-checked before dependent services start
 
-2. **Grafana** (`grafana/grafana:latest`)
+3. **InfluxDB 3 Explorer** (`influxdata/influxdb3-ui`)
+   - Web UI for InfluxDB 3 Core
+   - Port: 8888 (http://localhost:8888)
+   - Query interface and database browser
+   - Admin mode enabled
+   - **Fully automatic** - pre-configured via `logs/influxdb/config.json`
+
+4. **Grafana** (`grafana/grafana:latest`)
    - Visualization and dashboarding
    - Port: 3000 (http://localhost:3000)
    - Auto-provisions InfluxDB datasource
    - Pre-configured dashboards for system metrics
    - Credentials: admin/admin
 
-3. **PCP Parser - Python** (Custom Ubuntu 22.04)
+5. **PCP Parser - Python** (Custom Ubuntu 22.04)
    - Processes PCP archives from input directory
-   - Extracts metrics using PCP tools
-   - Exports to InfluxDB using Flux protocol
+   - Extracts metrics using PCP tools (`pmrep` CSV export)
+   - Exports to InfluxDB 3 using line protocol format
+   - **Batched writes**: 5,000 points per batch (10MB limit)
    - Trigger-based processing (manual start via web UI)
    - Field-based data model for optimal performance
    - Automatic archive management (processed/failed)
    - Watches for `/src/.process_trigger_python`
 
-4. **PCP Parser - Go** (Custom Ubuntu 22.04)
+6. **PCP Parser - Go** (Custom Ubuntu 22.04)
    - Go-based implementation for improved performance
    - 6-10x faster startup time compared to Python
    - 4-5x less memory usage
@@ -191,7 +215,7 @@ Output: 300-1870 validated metrics
    - Increased buffer size for handling large CSV files (10MB per line)
    - Watches for `/src/.process_trigger_go`
 
-5. **Web Control Panel** (`web_pcp_ctrl`)
+7. **Web Control Panel** (`web_pcp_ctrl`)
    - Flask-based web interface
    - Port: 5000 (http://localhost:5000)
    - File upload, management, and processing control
@@ -232,6 +256,7 @@ PCP/
 │   │
 │   ├── grafana/                      # Grafana provisioning
 │   │   ├── generate_dashboard.py     # ⭐ Dashboard generator script
+|   |   ├── generate_limited_dashboard.py     # ⭐ Limited Dashboard generator script
 │   │   ├── DASHBOARD_README.md       # Dashboard documentation
 │   │   └── provisioning/
 │   │       ├── datasources/          # InfluxDB datasource config
@@ -254,12 +279,7 @@ PCP/
 │   └── logs/                         # Container logs (by container)
 │       ├── grafana/
 │       ├── influxdb/
-│       └── pcp_parser/
-│           ├── pcp_parser.log             # Parser logs
-│           ├── metrics_labels.csv         # Discovered metrics
-│           ├── validated_metrics_discovered.txt  # Auto-discovered metrics (reference)
-│           └── pmrep_output_*.csv         # CSV output per archive
-│
+│       └── pcp_parser/│
 ├── scripts/                          # Management utility scripts
 │   ├── collect_logs.sh               # Collect all container logs
 │   ├── collect_logs.bat              # Windows version
@@ -268,10 +288,34 @@ PCP/
 │
 ├── sampleData/                       # Sample PCP archives for testing
 ├── README.md                         # This file
-└── DIRECTORY_STRUCTURE.md            # Detailed structure docs
 ```
 
 ## How It Works
+
+### Startup Sequence
+
+When you run `docker-compose up -d`, the following happens automatically:
+
+1. **influxdb3-init starts** and performs initialization:
+   - **Step 1**: Token management - reuses `logs/influxdb/.admin_token` or generates new
+   - **Step 1.5**: Creates `logs/influxdb/config.json` for Explorer UI
+   - **Step 2**: Waits for InfluxDB 3 Core to start (infinite timeout)
+   - **Step 3**: Creates `pcp-metrics` database using InfluxDB CLI
+   - **Step 4**: Verifies database exists and displays database list
+   - **Step 5**: Restarts dependent containers (profile-aware)
+   - **Exit**: Container exits after successful initialization
+
+2. **influxdb3-core starts** with `logs/influxdb/.admin_token` authentication
+
+3. **influxdb3-explorer starts** with auto-configuration via `logs/influxdb/config.json`
+
+4. **Grafana starts** with InfluxDB datasource pre-configured
+
+5. **PCP Parser starts** (Python/Go/Rust based on profile) ready to process archives
+
+6. **Web Control Panel starts** at http://localhost:5000
+
+All services are ready to use - no manual configuration needed!
 
 ### Data Flow
 
@@ -307,27 +351,9 @@ PCP/
 - **Field-based data model** - all metrics as fields in single point
 - **No timeout logs** - stderr suppressed from pmrep command
 
-**Supported Metrics** (PSOC System):
-- CPU frequency (8 cores: cpu0-cpu7)
-- Temperature sensors (4 sensors: psoc, sensor1-3)
-- Voltage rails (14 rails: 1v0, 1v2, 1v5, 1v8, 2v5, 3v3, 5v, 12v, vbus, vholdup, etc.)
-- Current draw (4 buses: 3v3bus, 5vbus, 12vbus, poe)
-- Fan metrics (RPM, duty cycle, status)
-- Heater status and control
-- System status flags (power, fan, heater states)
-- 100+ unique PSOC metrics tracked
-
-**Data Filtering**:
-- Zero values are filtered out and not exported to InfluxDB
-- Empty, None, N/A, and null values are skipped
-- Only non-zero metrics are tracked in metrics_labels.csv
-- Reduces storage by ~76% compared to unfiltered data
-
-**Data Retention**:
-- InfluxDB default retention: Infinite
-- Configure retention policies via InfluxDB API if needed
-
 ## Quick Start
+
+**Zero-configuration setup - just run and go!**
 
 ### Method 1: Using Docker Compose (Command Line)
 
@@ -335,13 +361,24 @@ PCP/
 # Navigate to src directory
 cd src
 
-# Start all containers
+# Start all containers (everything auto-configures)
 docker-compose up -d
+
+# Check initialization progress
+docker logs influxdb3-init
+
+# Wait for initialization to complete (~30 seconds)
+# You'll see "✓ Initialization Complete!" when ready
+
+# Access services immediately:
+# - Web Control Panel: http://localhost:5000
+# - Grafana: http://localhost:3000 (admin/admin)
+# - InfluxDB Explorer: http://localhost:8888 (pre-configured)
 
 # Check container status
 docker-compose ps
 
-# View logs
+# View logs (optional)
 docker-compose logs -f
 
 # Stop containers
@@ -367,23 +404,190 @@ docker-compose down
    - View running containers
    - Right-click for logs, restart, etc.
 
+## InfluxDB 3 Core Setup
+
+This project uses **InfluxDB 3 Core**, a high-performance time-series database. Key differences from InfluxDB v2:
+- **No web UI** - API-only interface (use InfluxDB 3 Explorer at http://localhost:8888)
+- **SQL queries** instead of Flux
+- **Token-based authentication** via CLI
+- **Simpler architecture** - no organizations/buckets, just databases
+
+### Automated Setup (No Manual Steps Required!)
+
+The setup is **fully automated** via the `influxdb3-init` container:
+
+**Just run:**
+```bash
+cd src
+docker-compose up -d
+```
+
+**What happens automatically:**
+
+1. **Token Management**:
+   - Checks `logs/influxdb/.admin_token` - reuses if valid, generates new if missing
+   - Synchronizes token to `.env` file (`INFLUXDB_TOKEN=...`)
+   - Creates `logs/influxdb/config.json` for Explorer UI
+
+2. **Database Setup**:
+   - Waits for InfluxDB 3 Core (infinite timeout)
+   - Creates `pcp-metrics` database using InfluxDB CLI
+   - Verifies and displays all databases
+
+3. **Service Configuration**:
+   - Explorer UI auto-configured via `logs/influxdb/config.json`
+   - Grafana datasource pre-configured
+   - All services ready immediately
+
+4. **Container Orchestration**:
+   - Restarts dependent containers when token changes
+   - Profile-aware (only restarts running containers)
+
+### Token Management
+
+**Why multiple token files?**
+
+The system uses three auto-generated files to distribute the token:
+
+1. **`logs/influxdb/.admin_token`** (JSON format) - InfluxDB 3 Core authentication:
+   ```json
+   {
+     "token": "apiv3_...",
+     "name": "pcp-admin",
+     "expiry_millis": 2078769556000
+   }
+   ```
+
+2. **`.env`** (plain text) - Environment variables for Docker containers:
+   ```bash
+   INFLUXDB_TOKEN=apiv3_...
+   ```
+
+3. **`logs/influxdb/config.json`** (JSON format) - Explorer UI auto-configuration:
+   ```json
+   {
+     "DEFAULT_INFLUX_SERVER": "http://influxdb3-core:8181",
+     "DEFAULT_INFLUX_DATABASE": "pcp-metrics",
+     "DEFAULT_API_TOKEN": "apiv3_...",
+     "DEFAULT_SERVER_NAME": "influxdb3-server"
+   }
+   ```
+
+**Why separate files?**
+- InfluxDB 3 Core requires JSON via `--admin-token-file` flag
+- Docker Compose environment variables require plain text
+- Explorer UI requires config.json for automatic server setup
+- All three are auto-generated and synchronized by `influxdb3-init`
+- `.admin_token` and `config.json` stored in `logs/influxdb/` for organization
+
+### Verification
+
+```bash
+# Check initialization logs
+docker logs influxdb3-init
+
+# Verify database exists
+docker exec influxdb3-core influxdb3 show databases --host http://localhost:8181 --token $(grep INFLUXDB_TOKEN src/.env | cut -d'=' -f2)
+
+# Access InfluxDB 3 Explorer UI
+open http://localhost:8888
+```
+
+### InfluxDB 3 Explorer
+
+**Fully automatic** - no configuration needed!
+
+- **URL**: http://localhost:8888
+- **Configuration**: Auto-configured via `logs/influxdb/config.json`
+- **Server**: `influxdb3-server` → `http://influxdb3-core:8181`
+- **Database**: `pcp-metrics`
+- **Token**: Auto-synchronized from `logs/influxdb/.admin_token`
+
+**Token Retrieval Scripts** (optional - for manual CLI access):
+```bash
+# Linux/Mac
+./scripts/get-influxdb-token.sh
+
+# Windows
+scripts\get-influxdb-token.bat
+```
+
+### Configuration Summary
+
+**Fully Automated:**
+- ✓ Token generation and synchronization
+- ✓ Database creation and verification
+- ✓ Explorer UI auto-configuration
+- ✓ All services pre-configured and ready
+
+**Configuration Files:**
+- `.env` - Environment variables (auto-generated, user-editable)
+- `logs/influxdb/.admin_token` - InfluxDB authentication (auto-generated)
+- `logs/influxdb/config.json` - Explorer configuration (auto-generated)
+- `docker-compose.yml` - Infrastructure definition
+
+**Important**: If you remove the InfluxDB volume, also remove `.admin_token` and `config.json` (see [Clean InfluxDB Data](#clean-influxdb-data-and-credentials))
+
 ### Accessing Services
 
-- **Web Control Panel**: http://localhost:5000
-  - Upload and manage PCP archives
-  - Trigger processing manually
-  - View logs and CSV files
-  - **Configure data tagging** - set product type and serial number (required before processing)
+| Service | URL | Credentials | Notes |
+|---------|-----|-------------|-------|
+| **Web Control Panel** | http://localhost:5000 | None | Upload archives, trigger processing, view logs |
+| **Grafana** | http://localhost:3000 | admin / admin | Pre-configured dashboards |
+| **InfluxDB 3 Explorer** | http://localhost:8888 | Auto-configured | Query interface (pre-configured) |
+| **InfluxDB 3 Core API** | http://localhost:8181 | Token from `.env` | API-only, no web UI |
 
-- **Grafana**: http://localhost:3000
-  - Username: `admin`
-  - Password: `admin`
+### Advanced Configuration
 
-- **InfluxDB**: http://localhost:8086
-  - Username: `admin`
-  - Password: `adminadmin`
-  - Org: `pcp-org`
-  - Token: `pcp-admin-token-12345`
+**.env File** (auto-generated, user-editable):
+```bash
+INFLUXDB_TOKEN=apiv3_...           # Auto-generated admin token
+INFLUXDB_NODE_ID=node1             # Node identifier
+PRODUCT_TYPE=SW_DEV_12             # Data tag for filtering
+SERIAL_NUMBER=1235678              # Data tag for filtering
+```
+
+**Environment Variables** (optional overrides in docker-compose.yml):
+- `ENABLE_PROCESS_METRICS=false` - Disable high-cardinality process metrics
+- `ENABLE_DISK_METRICS=true` - Enable disk metrics
+- `INFLUX_BATCH_SIZE=5000` - Batch size for InfluxDB writes (default: 5000, max recommended: 5000)
+- `VALIDATION_BATCH_SIZE=100` - Metrics validation batch size
+- See individual container sections in docker-compose.yml for full list
+
+### InfluxDB Write Strategy
+
+**How Data is Written to InfluxDB 3 Core:**
+
+1. **Line Protocol Format**: Data is converted to InfluxDB line protocol format
+   ```
+   pcp_metrics,host=node1,product_type=SW_DEV_12,serialNumber=1235678 metric.name=value timestamp
+   ```
+
+2. **Batched Writes**: Data points are sent in batches to optimize performance
+   - **Default Batch Size**: 5,000 points per write
+   - **InfluxDB 3 Limit**: 10MB max request size (10,485,760 bytes)
+   - **Why 5,000**: Ensures each batch stays well under the 10MB limit
+   - Configurable via `INFLUX_BATCH_SIZE` environment variable
+
+3. **Write Process**:
+   - Extract metrics from PCP archive using `pmrep`
+   - Parse CSV output into pandas DataFrame
+   - Generate line protocol entries (one per metric per timestamp)
+   - Split into batches of 5,000 points
+   - Send each batch via InfluxDB 3 client library
+   - Log progress every 50 batches
+
+4. **Error Handling**:
+   - **413 Payload Too Large**: Batch size too large, reduce `INFLUX_BATCH_SIZE`
+   - **401 Unauthorized**: Token mismatch, check `.env` and `logs/influxdb/.admin_token`
+   - **404 Database Not Found**: Database not created, check `influxdb3-init` logs
+   - Failed archives moved to `archive/failed` for retry
+
+**Performance Notes**:
+- Larger batches = fewer API calls but risk exceeding 10MB limit
+- Smaller batches = more API calls but guaranteed success
+- 5,000 points ≈ 1.5-2MB per batch (safe margin)
+- Total write time depends on: data points, network speed, InfluxDB load
 
 ## Web Control Panel
 
@@ -630,8 +834,11 @@ python generate_dashboard.py
 
 **Manage Data:**
 ```bash
-# Check InfluxDB data
-docker exec influxdb influx query 'from(bucket:"pcp-metrics") |> range(start:-1h) |> count()'
+# Check InfluxDB data (use your token from .env)
+curl -X POST "http://localhost:8181/api/v3/query_sql" \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -H "Content-Type: application/json" \
+  -d '{"db": "pcp-metrics", "q": "SELECT COUNT(*) FROM pcp_metrics"}'
 
 # Clear all data (WARNING: Deletes everything!)
 docker-compose down -v
@@ -775,24 +982,40 @@ docker logs pcp_parser
 docker stats
 ```
 
-### InfluxDB Queries
+### InfluxDB 3 Core Queries
 
-Access InfluxDB UI at http://localhost:8086 and run Flux queries:
+InfluxDB 3 Core uses **SQL** for queries (not Flux). Example queries via API:
 
-```flux
-from(bucket: "pcp-metrics")
-  |> range(start: -1h)
-  |> filter(fn: (r) => r["_measurement"] == "pcp_metrics")
-  |> filter(fn: (r) => r["metric"] =~ /cpu/)
+```bash
+# Query data using SQL
+curl -X POST "http://localhost:8181/api/v3/query_sql" \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "db": "pcp-metrics",
+    "q": "SELECT * FROM pcp_metrics WHERE time > now() - INTERVAL '\''1 hour'\''"
+  }'
+
+# Count data points
+curl -X POST "http://localhost:8181/api/v3/query_sql" \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "db": "pcp-metrics",
+    "q": "SELECT COUNT(*) FROM pcp_metrics"
+  }'
 ```
+
+**Note**: No web UI available. Use Grafana for visualization or API for queries.
 
 ### Grafana Data Source
 
 The InfluxDB datasource is auto-provisioned with:
-- URL: `http://influxdb:8086`
-- Organization: `pcp-org`
-- Default Bucket: `pcp-metrics`
-- Token: `pcp-admin-token-12345`
+- URL: `http://influxdb3-core:8181`
+- Database: `pcp-metrics`
+- Query Language: SQL
+- Token: From `.env` file
+- Version: InfluxDB 3 (SQL)
 
 ## Recent Fixes
 
@@ -854,19 +1077,24 @@ docker-compose up -d
 ### No Data in Grafana
 
 **Check**:
-1. Verify InfluxDB is running and healthy:
+1. Verify InfluxDB 3 Core is running and healthy:
    ```bash
-   docker ps | grep influxdb
+   docker ps | grep influxdb3-core
+   curl http://localhost:8181/health  # Should return "OK"
    ```
 
 2. Verify datasource connection in Grafana:
-   - Settings → Data Sources → InfluxDB
+   - Settings → Data Sources → InfluxDB3-SQL
    - Click "Test" button
 
 3. Check if data exists in InfluxDB:
-   - Go to http://localhost:8086
-   - Navigate to Data Explorer
-   - Query the `pcp-metrics` bucket
+   ```bash
+   # Query via API (use your token from .env)
+   curl -X POST "http://localhost:8181/api/v3/query_sql" \
+     -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+     -H "Content-Type: application/json" \
+     -d '{"db": "pcp-metrics", "q": "SELECT COUNT(*) FROM pcp_metrics"}'
+   ```
 
 ### Archives Not Processing
 
@@ -1537,6 +1765,50 @@ docker volume rm pcp_grafana-data pcp_influxdb-data
 docker-compose up -d
 ```
 
+### Clean InfluxDB Data and Credentials
+
+**IMPORTANT**: When removing InfluxDB volumes, you must also remove the token and configuration files to maintain consistency.
+
+**If removing InfluxDB volume:**
+```bash
+# Stop containers
+cd src
+docker-compose down
+
+# Remove InfluxDB volume
+docker volume rm pcp_influxdb-data
+
+# Remove token and configuration files
+rm -f logs/influxdb/.admin_token
+rm -f logs/influxdb/config.json
+
+# Start fresh - new token and config will be auto-generated
+docker-compose up -d
+```
+
+**If removing token/config files:**
+```bash
+# Stop containers
+cd src
+docker-compose down
+
+# Remove configuration files
+rm -f logs/influxdb/.admin_token
+rm -f logs/influxdb/config.json
+
+# Remove InfluxDB volume (data won't match new token)
+docker volume rm pcp_influxdb-data
+
+# Start fresh
+docker-compose up -d
+```
+
+**Why this is necessary:**
+- InfluxDB volume contains data encrypted/authenticated with the token in `.admin_token`
+- If you remove the volume but keep the old token, new data will use the old token
+- If you remove the token but keep the volume, authentication will fail
+- Always remove both together for a clean state
+
 ## Documentation
 
 ### Main Documentation
@@ -1566,6 +1838,78 @@ docker-compose up -d
 - **src/logs/pcp_parser/pcp_parser.log** - Real-time parser processing logs
 
 ## Troubleshooting
+
+### Issue: 413 Payload Too Large
+
+**Symptoms:**
+```
+Error exporting to InfluxDB: (413)
+Reason: Payload Too Large
+HTTP response body: {"code":"request too large","message":"max request size (10485760 bytes) exceeded"}
+```
+
+**Cause:**
+Batch size exceeds InfluxDB 3 Core's 10MB max request size limit.
+
+**Solution:**
+Reduce the batch size in `pcp_parser.py` or via environment variable:
+
+```python
+# In pcp_parser.py (line 59)
+INFLUX_BATCH_SIZE = int(os.getenv("INFLUX_BATCH_SIZE", "5000"))  # Reduced from 50000
+```
+
+Or set in docker-compose.yml:
+```yaml
+pcp_parser_python:
+  environment:
+    - INFLUX_BATCH_SIZE=5000  # Default is now 5000
+```
+
+**Recommended Values:**
+- **5,000 points**: Safe for all scenarios (default)
+- **10,000 points**: May work for simple metrics
+- **50,000 points**: Will fail with complex metric names/tags
+
+### Issue: 401 Unauthorized
+
+**Symptoms:**
+```
+Error exporting to InfluxDB: (401)
+Reason: Unauthorized
+```
+
+**Causes & Solutions:**
+
+1. **Token mismatch between containers**
+   ```bash
+   # Check token consistency
+   cat src/.env | grep INFLUXDB_TOKEN
+   cat src/logs/influxdb/.admin_token
+   cat src/logs/influxdb/config.json
+
+   # All three should have the same token
+   # If not, restart influxdb3-init to synchronize
+   docker-compose up -d influxdb3-init
+   ```
+
+2. **Database doesn't exist**
+   ```bash
+   # Verify database exists
+   docker-compose exec influxdb3-core influxdb3 show databases \
+     --host http://localhost:8181 \
+     --token $(grep INFLUXDB_TOKEN src/.env | cut -d'=' -f2)
+
+   # Should show "pcp-metrics" database
+   # If not, check influxdb3-init logs
+   docker logs influxdb3-init
+   ```
+
+3. **Container using old token**
+   ```bash
+   # Restart PCP parser to reload environment variables
+   docker-compose restart pcp_parser_python
+   ```
 
 ### Issue: 0 Data Points Written
 
@@ -1679,11 +2023,15 @@ Found 1982 total metrics, validating each one...
 
 1. **Verify InfluxDB has data**
    ```bash
-   docker exec influxdb influx query 'from(bucket:"pcp-metrics") |> range(start:-1h) |> count()'
+   # Query via API (use your token from .env)
+   curl -X POST "http://localhost:8181/api/v3/query_sql" \
+     -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+     -H "Content-Type: application/json" \
+     -d '{"db": "pcp-metrics", "q": "SELECT COUNT(*) FROM pcp_metrics"}'
    ```
 
 2. **Check datasource connection**
-   - Grafana → Configuration → Data Sources → InfluxDB
+   - Grafana → Configuration → Data Sources → InfluxDB3-SQL
    - Click "Test" button
    - Should show "Data source is working"
 
@@ -1691,22 +2039,22 @@ Found 1982 total metrics, validating each one...
    - Check dashboard time picker (top right)
    - Ensure it covers the period when archives were processed
 
-4. **Check bucket name**
-   - Dashboard queries should use bucket: `pcp-metrics`
-   - Org: `pcp-org`
+4. **Check database name**
+   - Dashboard queries should use database: `pcp-metrics`
+   - Query language: SQL (not Flux)
 
 ### Issue: Container Won't Start
 
 **Check logs**:
 ```bash
 docker-compose logs pcp_parser
-docker-compose logs influxdb
+docker-compose logs influxdb3-core
 docker-compose logs grafana
 ```
 
 **Common fixes**:
 ```bash
-# Port conflict - another service using 3000/8086
+# Port conflict - another service using 3000/8181
 docker-compose down
 # Change ports in docker-compose.yml if needed
 

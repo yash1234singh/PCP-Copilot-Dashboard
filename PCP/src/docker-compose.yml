@@ -1,46 +1,262 @@
 version: '3.8'
 
 services:
-  influxdb:
-    image: influxdb:2.7-alpine
-    container_name: influxdb
-    ports:
-      - "8086:8086"
+  influxdb3-init:
+    image: alpine:latest
+    container_name: influxdb3-init
     volumes:
-      - influxdb-data:/var/lib/influxdb2
+      - .:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file:
+      - .env
+    networks:
+      - pcp-network
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "=========================================="
+        echo "InfluxDB 3 Initialization"
+        echo "=========================================="
+
+        # STEP 1: Token management
+        echo "Step 1: Token management..."
+
+        # Ensure logs/influxdb directory exists
+        mkdir -p /workspace/logs/influxdb
+
+        # Check if .admin_token exists and is valid
+        if [ -f /workspace/logs/influxdb/.admin_token ] && [ -s /workspace/logs/influxdb/.admin_token ]; then
+          echo "  ✓ .admin_token file exists"
+
+          # Extract token from .admin_token JSON file
+          ADMIN_TOKEN=$$(grep '"token"' /workspace/logs/influxdb/.admin_token | sed 's/.*"token": *"\([^"]*\)".*/\1/')
+
+          if [ -n "$$ADMIN_TOKEN" ]; then
+            echo "  ✓ Using existing token from .admin_token"
+
+            # Ensure .env is synchronized with .admin_token
+            if grep -q "^INFLUXDB_TOKEN=" /workspace/.env 2>/dev/null; then
+              CURRENT_ENV_TOKEN=$$(grep "^INFLUXDB_TOKEN=" /workspace/.env | cut -d'=' -f2)
+              if [ "$$CURRENT_ENV_TOKEN" != "$$ADMIN_TOKEN" ]; then
+                echo "  ⚠ .env token mismatch, synchronizing with .admin_token"
+                sed -i "s|^INFLUXDB_TOKEN=.*|INFLUXDB_TOKEN=$$ADMIN_TOKEN|" /workspace/.env
+              fi
+            else
+              echo "  Adding token to .env"
+              echo "" >> /workspace/.env
+              echo "# InfluxDB 3 Core Admin Token" >> /workspace/.env
+              echo "INFLUXDB_TOKEN=$$ADMIN_TOKEN" >> /workspace/.env
+            fi
+          else
+            echo "  ✗ .admin_token file is invalid, regenerating..."
+            rm -rf /workspace/logs/influxdb/.admin_token
+            ADMIN_TOKEN=""
+          fi
+        fi
+
+        # Generate new token if needed
+        if [ -z "$$ADMIN_TOKEN" ]; then
+          echo "  Generating new admin token..."
+
+          # Generate random token
+          NEW_TOKEN="apiv3_$$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 80 | head -n 1)"
+          EXPIRY=$$(( $$(date +%s) * 1000 + 315360000000 ))
+
+          # Remove any existing files/directories
+          rm -rf /workspace/logs/influxdb/.admin_token
+
+          # Create JSON token file for InfluxDB
+          echo "{" > /workspace/logs/influxdb/.admin_token
+          echo "  \"token\": \"$$NEW_TOKEN\"," >> /workspace/logs/influxdb/.admin_token
+          echo "  \"name\": \"pcp-admin\"," >> /workspace/logs/influxdb/.admin_token
+          echo "  \"expiry_millis\": $$EXPIRY" >> /workspace/logs/influxdb/.admin_token
+          echo "}" >> /workspace/logs/influxdb/.admin_token
+
+          # Update .env file
+          if grep -q "^INFLUXDB_TOKEN=" /workspace/.env 2>/dev/null; then
+            sed -i "s|^INFLUXDB_TOKEN=.*|INFLUXDB_TOKEN=$$NEW_TOKEN|" /workspace/.env
+          elif grep -q "^#INFLUXDB_TOKEN=" /workspace/.env 2>/dev/null; then
+            sed -i "s|^#INFLUXDB_TOKEN=.*|INFLUXDB_TOKEN=$$NEW_TOKEN|" /workspace/.env
+          else
+            echo "" >> /workspace/.env
+            echo "# InfluxDB 3 Core Admin Token" >> /workspace/.env
+            echo "INFLUXDB_TOKEN=$$NEW_TOKEN" >> /workspace/.env
+          fi
+
+          echo "  ✓ New token generated and saved"
+          ADMIN_TOKEN="$$NEW_TOKEN"
+        fi
+
+        echo "✓ Token ready: $$ADMIN_TOKEN"
+
+        # STEP 1.5: Create config.json for InfluxDB 3 Explorer
+        echo ""
+        echo "Step 1.5: Creating InfluxDB 3 Explorer configuration..."
+
+        # Remove any existing config.json file or directory
+        rm -rf /workspace/logs/influxdb/config.json
+
+        # Create config.json for Explorer using echo to avoid YAML parsing issues
+        echo "{" > /workspace/logs/influxdb/config.json
+        echo "  \"DEFAULT_INFLUX_SERVER\": \"http://influxdb3-core:8181\"," >> /workspace/logs/influxdb/config.json
+        echo "  \"DEFAULT_INFLUX_DATABASE\": \"pcp-metrics\"," >> /workspace/logs/influxdb/config.json
+        echo "  \"DEFAULT_API_TOKEN\": \"$$ADMIN_TOKEN\"," >> /workspace/logs/influxdb/config.json
+        echo "  \"DEFAULT_SERVER_NAME\": \"influxdb3-server\"" >> /workspace/logs/influxdb/config.json
+        echo "}" >> /workspace/logs/influxdb/config.json
+
+        echo "✓ Explorer configuration created"
+
+        # STEP 2: Signal InfluxDB to start (it will read the token file now)
+        echo ""
+        echo "Step 2: Token ready, InfluxDB can now start..."
+        echo "  Waiting for InfluxDB 3 Core to start..."
+
+        # Install netcat for port check
+        apk add --no-cache netcat-openbsd curl >/dev/null 2>&1
+
+        # Wait for InfluxDB port
+        ATTEMPT=0
+        while true; do
+          if nc -z influxdb3-core 8181 2>/dev/null; then
+            echo "✓ InfluxDB 3 Core is ready (after $$ATTEMPT attempts)"
+            break
+          fi
+          ATTEMPT=$$((ATTEMPT + 1))
+          if [ $$((ATTEMPT % 10)) -eq 0 ]; then
+            echo "  Still waiting... (attempt $$ATTEMPT)"
+          fi
+          sleep 2
+        done
+
+        # Give it a moment to fully initialize
+        sleep 5
+
+        # STEP 3: Create database using CLI in influxdb3-core container
+        echo ""
+        echo "Step 3: Creating database pcp-metrics..."
+
+        # Install docker CLI to execute commands in influxdb3-core container
+        apk add --no-cache docker-cli >/dev/null 2>&1
+
+        # Create database using influxdb3 CLI inside the influxdb3-core container
+        CREATE_OUTPUT=$$(docker exec influxdb3-core influxdb3 create database pcp-metrics \
+          --host http://localhost:8181 \
+          --token "$$ADMIN_TOKEN" 2>&1)
+
+        if echo "$$CREATE_OUTPUT" | grep -q "successfully"; then
+          echo "✓ Database created successfully"
+        elif echo "$$CREATE_OUTPUT" | grep -q "already exists"; then
+          echo "✓ Database already exists"
+        else
+          echo "⚠ Database creation output: $$CREATE_OUTPUT"
+        fi
+
+        # STEP 4: Verify database exists
+        echo ""
+        echo "Step 4: Verifying database..."
+
+        # List all databases
+        SHOW_OUTPUT=$$(docker exec influxdb3-core influxdb3 show databases \
+          --host http://localhost:8181 \
+          --token "$$ADMIN_TOKEN" 2>&1)
+
+        echo "  Current databases:"
+        echo "$$SHOW_OUTPUT" | sed 's/^/    /'
+
+        if echo "$$SHOW_OUTPUT" | grep -q "pcp-metrics"; then
+          echo "✓ Database verified: pcp-metrics exists"
+        else
+          echo "✗ ERROR: pcp-metrics database not found!"
+          echo "  This will cause 401 errors when writing data"
+          exit 1
+        fi
+
+        # STEP 5: Token is ready - all containers will read from mounted file
+        echo ""
+        echo "Step 5: Token file ready..."
+        echo "✓ All containers will read token from /admin_token (mounted file)"
+        echo "  No restart needed - containers use volume-mounted token file"
+
+        echo ""
+        echo "=========================================="
+        echo "✓ Initialization Complete!"
+        echo "=========================================="
+        echo "Database: pcp-metrics"
+        echo "Token: $$ADMIN_TOKEN"
+        echo ""
+        echo "All containers started with new token"
+        echo "=========================================="
+    restart: "no"
+
+  influxdb3-core:
+    image: influxdb:3-core
+    container_name: influxdb3-core
+    depends_on:
+      influxdb3-init:
+        condition: service_started
+    ports:
+      - "8181:8181"
+    volumes:
+      - influxdb-data:/var/lib/influxdb3
       - ./logs/influxdb:/logs
-    command: >
-      sh -c "(/entrypoint.sh influxd 2>&1 | tee -a /logs/influxdb.log) &
-             while ! wget -q --spider http://localhost:8086/health 2>/dev/null; do sleep 1; done;
-             tail -f /logs/influxdb.log"
+      - ./logs/influxdb/.admin_token:/admin_token:ro
+    command:
+      - influxdb3
+      - serve
+      - --node-id=${INFLUXDB_NODE_ID:-node1}
+      - --object-store=file
+      - --data-dir=/var/lib/influxdb3
+      - --admin-token-file=/admin_token
     environment:
-      - DOCKER_INFLUXDB_INIT_MODE=setup
-      - DOCKER_INFLUXDB_INIT_USERNAME=admin
-      - DOCKER_INFLUXDB_INIT_PASSWORD=adminadmin
-      - DOCKER_INFLUXDB_INIT_ORG=pcp-org
-      - DOCKER_INFLUXDB_INIT_BUCKET=pcp-metrics
-      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=pcp-admin-token-12345
-      - INFLUXDB_HTTP_AUTH_ENABLED=true
-      # Write performance tuning
-      - INFLUXDB_DATA_CACHE_MAX_MEMORY_SIZE=2147483648  # 2GB cache for better write performance
-      - INFLUXDB_DATA_WAL_FSYNC_DELAY=1s  # Batch WAL writes (reduces disk I/O)
-      - INFLUXDB_HTTP_WRITE_TIMEOUT=300s  # Increase timeout for large batches
-      - INFLUXDB_HTTP_MAX_BODY_SIZE=100000000  # 100MB max request body
+      - INFLUXDB_NODE_ID=${INFLUXDB_NODE_ID:-node1}
+      - RUST_LOG=info
     networks:
       - pcp-network
     restart: unless-stopped
+    # Healthcheck disabled: /health endpoint requires authentication in InfluxDB 3 Core
+    # The service is considered healthy when the container is running
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8086/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "ps aux | grep 'influxdb3 serve' | grep -v grep || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
       start_period: 30s
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-        labels: "service=influxdb"
+        labels: "service=influxdb3-core"
+        # Filter out authentication error logs
+        tag: "influxdb3-core"
+
+  influxdb3-explorer:
+    image: influxdata/influxdb3-ui
+    container_name: influxdb3-explorer
+    ports:
+      - "8888:80"
+      - "8889:8888"
+    command: ["--mode=admin"]
+    volumes:
+      # Mount config.json for automatic server configuration
+      - ./logs/influxdb/config.json:/app-root/config/config.json:ro
+      # Mount admin token file directly
+      - ./logs/influxdb/.admin_token:/admin_token:ro
+    env_file:
+      - .env
+    depends_on:
+      influxdb3-core:
+        condition: service_healthy
+    networks:
+      - pcp-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=influxdb3-explorer"
 
   grafana:
     image: grafana/grafana:latest
@@ -48,10 +264,17 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
       - ./grafana/config/grafana.ini:/etc/grafana/grafana.ini
       - ./logs/grafana:/var/log/grafana
       - grafana-data:/var/lib/grafana
+      # Mount admin token file directly
+      - ./logs/influxdb/.admin_token:/admin_token:ro
+      # Mount entrypoint script to generate datasource config
+      - ./grafana/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: /entrypoint.sh
+    env_file:
+      - .env
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -68,7 +291,7 @@ services:
       - GF_FEATURE_TOGGLES_ENABLE=
       - GF_PLUGINS_ENABLE_ALPHA=false
     depends_on:
-      influxdb:
+      influxdb3-core:
         condition: service_healthy
     networks:
       - pcp-network
@@ -90,6 +313,8 @@ services:
     container_name: pcp_parser_python
     volumes:
       - .:/src
+      # Mount admin token file directly
+      - ./logs/influxdb/.admin_token:/admin_token:ro
     env_file:
       - .env
     environment:
@@ -97,16 +322,15 @@ services:
       - PROCESSED_DIR=/src/archive/processed
       - FAILED_DIR=/src/archive/failed
       - LOG_DIR=/src/logs/pcp_parser_python
-      - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_TOKEN=pcp-admin-token-12345
-      - INFLUXDB_ORG=pcp-org
-      - INFLUXDB_BUCKET=pcp-metrics
+      - INFLUXDB_URL=http://influxdb3-core:8181
+      - INFLUXDB_TOKEN_FILE=/admin_token
+      - INFLUXDB_DATABASE=pcp-metrics
       - INFLUXDB_MEASUREMENT=pcp_metrics
       - PCP_METRICS_FILTER=skip_empty,skip_none
       - PRODUCT_TYPE=${PRODUCT_TYPE:-SERVER1}
       - SERIAL_NUMBER=${SERIAL_NUMBER:-1234}
       - VALIDATION_BATCH_SIZE=500
-      - INFLUX_BATCH_SIZE=200000
+      - INFLUX_BATCH_SIZE=500
       - PROGRESS_LOG_INTERVAL=50
       - SKIP_VALIDATION=false
       - FORCE_REVALIDATE=false
@@ -124,7 +348,7 @@ services:
       # Parser identifier for coordination
       - PARSER_ID=python
     depends_on:
-      - influxdb
+      - influxdb3-core
     networks:
       - pcp-network
     restart: unless-stopped
@@ -152,10 +376,9 @@ services:
       - PROCESSED_DIR=/src/archive/processed
       - FAILED_DIR=/src/archive/failed
       - LOG_DIR=/src/logs/pcp_parser_go
-      - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_TOKEN=pcp-admin-token-12345
-      - INFLUXDB_ORG=pcp-org
-      - INFLUXDB_BUCKET=pcp-metrics
+      - INFLUXDB_URL=http://influxdb3-core:8181
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - INFLUXDB_DATABASE=pcp-metrics
       - INFLUXDB_MEASUREMENT=pcp_metrics
       # Value filtering (comma-separated: skip_zero, skip_empty, skip_none)
       # WARNING: skip_zero may filter useful metrics! Use cautiously
@@ -164,7 +387,7 @@ services:
       - SERIAL_NUMBER=${SERIAL_NUMBER:-1234}
       # Performance tuning (higher = faster but more memory)
       - VALIDATION_BATCH_SIZE=500
-      - INFLUX_BATCH_SIZE=200000
+      - INFLUX_BATCH_SIZE=5000
       - PROGRESS_LOG_INTERVAL=50
       # Validation control
       - SKIP_VALIDATION=false         # Skip validation entirely (NOT RECOMMENDED - causes 0 data points!)
@@ -184,7 +407,7 @@ services:
       # Parser identifier for coordination
       - PARSER_ID=go
     depends_on:
-      - influxdb
+      - influxdb3-core
     networks:
       - pcp-network
     restart: unless-stopped
@@ -212,10 +435,9 @@ services:
       - PROCESSED_DIR=/src/archive/processed
       - FAILED_DIR=/src/archive/failed
       - LOG_DIR=/src/logs/pcp_parser_rust
-      - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_TOKEN=pcp-admin-token-12345
-      - INFLUXDB_ORG=pcp-org
-      - INFLUXDB_BUCKET=pcp-metrics
+      - INFLUXDB_URL=http://influxdb3-core:8181
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - INFLUXDB_DATABASE=pcp-metrics
       - INFLUXDB_MEASUREMENT=pcp_metrics
       # Value filtering (comma-separated: skip_zero, skip_empty, skip_none)
       # WARNING: skip_zero may filter useful metrics! Use cautiously
@@ -224,7 +446,7 @@ services:
       - SERIAL_NUMBER=${SERIAL_NUMBER:-1234}
       # Performance tuning (higher = faster but more memory)
       - VALIDATION_BATCH_SIZE=1000
-      - INFLUX_BATCH_SIZE=200000
+      - INFLUX_BATCH_SIZE=5000
       - PROGRESS_LOG_INTERVAL=50
       # Validation control
       - SKIP_VALIDATION=false         # Skip validation entirely (NOT RECOMMENDED - causes 0 data points!)
@@ -241,7 +463,7 @@ services:
       # Parser identifier for coordination
       - PARSER_ID=rust
     depends_on:
-      - influxdb
+      - influxdb3-core
     networks:
       - pcp-network
     restart: unless-stopped

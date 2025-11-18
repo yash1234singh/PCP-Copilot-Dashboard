@@ -8,11 +8,54 @@ import json
 import os
 from pathlib import Path
 from collections import defaultdict
+import re
 
 # Paths
 SCRIPT_DIR = Path(__file__).parent
 VALIDATED_METRICS_FILE = SCRIPT_DIR.parent / "input" / "data_filter" / "validated_metrics.txt"
 OUTPUT_FILE = SCRIPT_DIR / "provisioning" / "dashboards" / "json" / "pcp-limited-view.json"
+EXPORT_JSON_FILE = SCRIPT_DIR.parent.parent / "export.json"
+VARIABLES_FILE = SCRIPT_DIR / "variables.txt"
+
+def load_metric_mappings():
+    """Load metric to field mappings from variables.txt"""
+    mappings = {}
+
+    if not VARIABLES_FILE.exists():
+        print(f"WARNING: {VARIABLES_FILE} not found. Will use auto-expansion.")
+        return None
+
+    with open(VARIABLES_FILE, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or line.startswith('##'):
+                continue
+
+            # Parse: "metric -> field1, field2, ..."
+            if ' -> ' in line:
+                metric, fields_str = line.split(' -> ', 1)
+                if fields_str == '(no match)':
+                    mappings[metric] = []
+                else:
+                    fields = [f.strip() for f in fields_str.split(',')]
+                    mappings[metric] = fields
+
+    print(f"Loaded {len(mappings)} metric mappings from {VARIABLES_FILE}")
+    return mappings
+
+def load_database_fields():
+    """Load actual field names from export.json"""
+    if not EXPORT_JSON_FILE.exists():
+        print(f"WARNING: {EXPORT_JSON_FILE} not found. Will use metric names as-is.")
+        return set()
+
+    with open(EXPORT_JSON_FILE, 'r') as f:
+        data = json.load(f)
+        # Get all field names except metadata
+        db_fields = set([k for k in data[0].keys() if k not in ['time', 'product_type', 'serialNumber', 'iid']])
+
+    print(f"Loaded {len(db_fields)} fields from database schema")
+    return db_fields
 
 def load_curated_metrics():
     """Load metrics from validated_metrics.txt, skip comments and empty lines"""
@@ -60,16 +103,60 @@ def sanitize_field_name(metric):
     """Convert metric name to field name (dots to underscores)"""
     return metric.replace('.', '_').replace('-', '_')
 
-def create_panel(panel_id, title, metrics, x, y, w=12, h=8):
+def expand_metric_to_fields(metric, db_fields, mappings=None):
+    """
+    Expand a metric name to actual database field names.
+    Uses mappings from variables.txt if available, otherwise auto-expands.
+
+    Examples:
+    - hinv.cpu.clock -> hinv_cpu_clock_cpu0, hinv_cpu_clock_cpu1, ...
+    - kernel.all.load -> kernel_all_load_1_minute, kernel_all_load_5_minute, kernel_all_load_15_minute
+    - filesys.capacity -> filesys_capacity_/dev/root, filesys_capacity_/dev/sda1, ...
+
+    Always returns at least the sanitized field name (will show no data if not in DB).
+    """
+    # Use mappings if available
+    if mappings is not None and metric in mappings:
+        fields = mappings[metric]
+        # If empty list (no match), use sanitized name
+        if not fields:
+            return [sanitize_field_name(metric)]
+        return fields
+
+    # Fall back to auto-expansion
+    base_field = sanitize_field_name(metric)
+
+    # Check if exact field exists
+    if base_field in db_fields:
+        return [base_field]
+
+    # Find all fields that start with this base pattern
+    matching_fields = [f for f in db_fields if f.startswith(base_field)]
+
+    if matching_fields:
+        return sorted(matching_fields)
+
+    # No matches found - return sanitized name anyway
+    return [base_field]
+
+def create_panel(panel_id, title, metrics, db_fields, mappings, x, y, w=12, h=8):
     """Create a time series panel for a group of metrics"""
-    # Convert metric names to field names
-    field_names = [sanitize_field_name(m) for m in metrics]
-    field_regex = '|'.join(field_names)
+    # Expand metrics to actual database fields
+    all_fields = []
+    for metric in metrics:
+        expanded = expand_metric_to_fields(metric, db_fields, mappings)
+        all_fields.extend(expanded)
+
+    # Create SQL SELECT list
+    field_list = ', '.join(all_fields)
+
+    # SQL query for InfluxDB 3
+    sql_query = f"SELECT time, {field_list} FROM pcp_metrics WHERE product_type = '$product_type' AND \"serialNumber\" = '$serialNumber' AND time >= $__timeFrom AND time <= $__timeTo ORDER BY time"
 
     return {
         "datasource": {
             "type": "influxdb",
-            "uid": "influxdb"
+            "uid": "influxdb3-sql"
         },
         "fieldConfig": {
             "defaults": {
@@ -116,16 +203,12 @@ def create_panel(panel_id, title, metrics, x, y, w=12, h=8):
             {
                 "datasource": {
                     "type": "influxdb",
-                    "uid": "influxdb"
+                    "uid": "influxdb3-sql"
                 },
-                "query": f'''from(bucket: "pcp-metrics")
-  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
-  |> filter(fn: (r) => r["_measurement"] == "pcp_metrics")
-  |> filter(fn: (r) => r["product_type"] =~ /${{product_type}}/)
-  |> filter(fn: (r) => r["serialNumber"] =~ /${{serialNumber}}/)
-  |> filter(fn: (r) => r["_field"] =~ /^({field_regex})$/)
-  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)''',
-                "refId": "A"
+                "rawSql": sql_query,
+                "refId": "A",
+                "format": "time_series",
+                "hide": False
             }
         ],
         "title": title,
@@ -150,6 +233,10 @@ def create_row_panel(panel_id, title, y):
 
 def generate_dashboard():
     """Generate the Limited View dashboard JSON"""
+
+    # Load database schema and metric mappings
+    db_fields = load_database_fields()
+    mappings = load_metric_mappings()
 
     metrics, category_map = load_curated_metrics()
 
@@ -183,15 +270,15 @@ def generate_dashboard():
                     },
                     "datasource": {
                         "type": "influxdb",
-                        "uid": "influxdb"
+                        "uid": "influxdb3-sql"
                     },
-                    "definition": "import \"influxdata/influxdb/v1\"\nv1.tagValues(bucket: \"pcp-metrics\", tag: \"product_type\", start: -30d)",
+                    "definition": "SELECT DISTINCT product_type FROM pcp_metrics",
                     "hide": 0,
                     "includeAll": True,
                     "multi": False,
                     "name": "product_type",
                     "options": [],
-                    "query": "import \"influxdata/influxdb/v1\"\nv1.tagValues(bucket: \"pcp-metrics\", tag: \"product_type\", start: -30d)",
+                    "query": "SELECT DISTINCT product_type FROM pcp_metrics",
                     "refresh": 1,
                     "regex": "",
                     "skipUrlSync": False,
@@ -206,15 +293,15 @@ def generate_dashboard():
                     },
                     "datasource": {
                         "type": "influxdb",
-                        "uid": "influxdb"
+                        "uid": "influxdb3-sql"
                     },
-                    "definition": "import \"influxdata/influxdb/v1\"\nv1.tagValues(bucket: \"pcp-metrics\", tag: \"serialNumber\", start: -30d)",
+                    "definition": "SELECT DISTINCT \"serialNumber\" FROM pcp_metrics",
                     "hide": 0,
                     "includeAll": True,
                     "multi": False,
                     "name": "serialNumber",
                     "options": [],
-                    "query": "import \"influxdata/influxdb/v1\"\nv1.tagValues(bucket: \"pcp-metrics\", tag: \"serialNumber\", start: -30d)",
+                    "query": "SELECT DISTINCT \"serialNumber\" FROM pcp_metrics",
                     "refresh": 1,
                     "regex": "",
                     "skipUrlSync": False,
@@ -262,6 +349,8 @@ def generate_dashboard():
                 panel_id=panel_id,
                 title=f"[{category_name}] Metrics {i+1}-{min(i+metrics_per_panel, len(category_metrics))} of {len(category_metrics)}",
                 metrics=chunk,
+                db_fields=db_fields,
+                mappings=mappings,
                 x=panel_x,
                 y=panel_y,
                 w=12,

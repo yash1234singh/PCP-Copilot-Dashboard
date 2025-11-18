@@ -12,13 +12,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install \
-    influxdb-client \
+    influxdb3-python \
     requests \
     pandas \
     numpy \
+    pyarrow \
     # Optional: Install faster CSV parsing (if needed)
     # python-snappy \  # For compression support
-    # pyarrow \        # For faster parquet/dataframe operations
     && pip3 cache purge
 
 # Parser configuration - OPTIMIZED for high-throughput
@@ -31,6 +31,23 @@ ENV ENABLE_LZ4_DECOMPRESSION=false
 ENV ENABLE_STREAMING_PMREP=true
 ENV ENABLE_PARALLEL_PMREP=false
 ENV PARALLEL_PMREP_WORKERS=3
+
+# InfluxDB 3 Core configuration
+ENV INFLUXDB_DATABASE=pcp-metrics
+ENV VALIDATION_BATCH_SIZE=500
+ENV PROGRESS_LOG_INTERVAL=50
+ENV SKIP_VALIDATION=false
+ENV FORCE_REVALIDATE=false
+
+# Metric category filters
+ENV ENABLE_PROCESS_METRICS=false
+ENV ENABLE_DISK_METRICS=true
+ENV ENABLE_FILE_METRICS=false
+ENV ENABLE_MEMORY_METRICS=true
+ENV ENABLE_NETWORK_METRICS=true
+ENV ENABLE_KERNEL_METRICS=true
+ENV ENABLE_SWAP_METRICS=false
+ENV ENABLE_NFS_METRICS=false
 
 WORKDIR /app
 
