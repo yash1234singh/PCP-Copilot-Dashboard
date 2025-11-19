@@ -73,12 +73,12 @@ FORCE_REVALIDATE = os.getenv("FORCE_REVALIDATE", "false").lower() == "true"  # F
 
 # Metric category filters (set to "false" to exclude that category)
 ENABLE_PROCESS_METRICS = os.getenv("ENABLE_PROCESS_METRICS", "false").lower() == "true"  # proc.* metrics (high cardinality)
-ENABLE_DISK_METRICS = os.getenv("ENABLE_DISK_METRICS", "true").lower() == "true"  # disk.* metrics
-ENABLE_FILE_METRICS = os.getenv("ENABLE_FILE_METRICS", "true").lower() == "true"  # vfs.* and filesys.* metrics
-ENABLE_MEMORY_METRICS = os.getenv("ENABLE_MEMORY_METRICS", "true").lower() == "true"  # mem.* metrics
-ENABLE_NETWORK_METRICS = os.getenv("ENABLE_NETWORK_METRICS", "true").lower() == "true"  # network.* metrics
-ENABLE_KERNEL_METRICS = os.getenv("ENABLE_KERNEL_METRICS", "true").lower() == "true"  # kernel.* metrics
-ENABLE_SWAP_METRICS = os.getenv("ENABLE_SWAP_METRICS", "true").lower() == "true"  # swap.* metrics
+ENABLE_DISK_METRICS = os.getenv("ENABLE_DISK_METRICS", "false").lower() == "true"  # disk.* metrics
+ENABLE_FILE_METRICS = os.getenv("ENABLE_FILE_METRICS", "false").lower() == "true"  # vfs.* and filesys.* metrics
+ENABLE_MEMORY_METRICS = os.getenv("ENABLE_MEMORY_METRICS", "false").lower() == "true"  # mem.* metrics
+ENABLE_NETWORK_METRICS = os.getenv("ENABLE_NETWORK_METRICS", "false").lower() == "true"  # network.* metrics
+ENABLE_KERNEL_METRICS = os.getenv("ENABLE_KERNEL_METRICS", "false").lower() == "true"  # kernel.* metrics
+ENABLE_SWAP_METRICS = os.getenv("ENABLE_SWAP_METRICS", "false").lower() == "true"  # swap.* metrics
 ENABLE_NFS_METRICS = os.getenv("ENABLE_NFS_METRICS", "false").lower() == "true"  # nfs.* metrics (often have PM_ERR_INDOM_LOG errors)
 
 SAVE_CSV_OUTPUT = os.getenv("SAVE_CSV_OUTPUT", "true").lower() == "true"

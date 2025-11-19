@@ -111,11 +111,11 @@ services:
       - SKIP_VALIDATION=false
       - FORCE_REVALIDATE=false
       - ENABLE_PROCESS_METRICS=false
-      - ENABLE_DISK_METRICS=true
+      - ENABLE_DISK_METRICS=false
       - ENABLE_FILE_METRICS=false
-      - ENABLE_MEMORY_METRICS=true
-      - ENABLE_NETWORK_METRICS=true
-      - ENABLE_KERNEL_METRICS=true
+      - ENABLE_MEMORY_METRICS=false
+      - ENABLE_NETWORK_METRICS=false
+      - ENABLE_KERNEL_METRICS=false
       - ENABLE_SWAP_METRICS=false
       - ENABLE_NFS_METRICS=false
       # Output configuration
