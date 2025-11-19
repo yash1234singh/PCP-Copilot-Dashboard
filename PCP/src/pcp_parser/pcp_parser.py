@@ -33,13 +33,13 @@ except ImportError:
     pd = None
     np = None
 
-# Import S3 Parquet exporter (optional)
+# S3 Parquet export (conditional import)
 try:
-    from s3_parquet_exporter import export_to_s3_parquet, ENABLE_S3_EXPORT
+    from s3_parquet_exporter import S3ParquetExporter
     S3_EXPORT_AVAILABLE = True
 except ImportError:
     S3_EXPORT_AVAILABLE = False
-    ENABLE_S3_EXPORT = False
+    S3ParquetExporter = None
 
 # Configuration from environment variables
 WATCH_DIR = Path(os.getenv("WATCH_DIR", "/src/input/raw"))
@@ -81,9 +81,10 @@ ENABLE_KERNEL_METRICS = os.getenv("ENABLE_KERNEL_METRICS", "false").lower() == "
 ENABLE_SWAP_METRICS = os.getenv("ENABLE_SWAP_METRICS", "false").lower() == "true"  # swap.* metrics
 ENABLE_NFS_METRICS = os.getenv("ENABLE_NFS_METRICS", "false").lower() == "true"  # nfs.* metrics (often have PM_ERR_INDOM_LOG errors)
 
-SAVE_CSV_OUTPUT = os.getenv("SAVE_CSV_OUTPUT", "true").lower() == "true"
 ENABLE_INFLUXDB_WRITE = os.getenv("ENABLE_INFLUXDB_WRITE", "true").lower() == "true"  # Enable/disable InfluxDB writes
 ENABLE_SNAME_PROCESSING = os.getenv("ENABLE_SNAME_PROCESSING", "false").lower() == "true"  # Enable/disable proc.psinfo.sname (causes timeouts)
+ENABLE_S3_EXPORT = os.getenv("ENABLE_S3_EXPORT", "false").lower() == "true"  # Enable/disable S3 Parquet export
+SAVE_CSV_OUTPUT = os.getenv("SAVE_CSV_OUTPUT", "true").lower() == "true"  # Enable/disable saving CSV output to disk
 
 # Constants for parallel processing (no need for env variable - always use optimal values)
 PARALLEL_VALIDATION_WORKERS = 100  # Optimal worker count for parallel validation
@@ -965,8 +966,413 @@ def dataframe_to_line_protocol(df: pd.DataFrame, product_type: str, serial_numbe
     return lines
 
 
+def collect_metrics_data(archive_base: Path, logger, metrics: List[str]) -> Optional[pd.DataFrame]:
+    """
+    Collect metrics data from PCP archive into pandas DataFrame (NO InfluxDB processing)
+
+    This function is a higher-level abstraction that:
+    1. Runs pmrep to extract CSV data
+    2. Parses CSV into pandas DataFrame
+    3. Returns raw data ready for export to any format (InfluxDB, S3, CSV, etc.)
+
+    Args:
+        archive_base: Path to PCP archive base
+        logger: Logger instance
+        metrics: List of validated metrics to extract
+
+    Returns:
+        pandas DataFrame with metrics data, or None if pandas unavailable or error
+    """
+    if not PANDAS_AVAILABLE:
+        logger.warning("Pandas not available, cannot collect data in DataFrame format")
+        return None
+
+    logger.info("===== COLLECTING METRICS DATA =====")
+    logger.info(f"Extracting {len(metrics)} metrics from archive...")
+
+    try:
+        # Build pmrep command
+        cmd = [
+            "pmrep",
+            "-a", str(archive_base),
+            "-t", "1sec",
+            "-o", "csv",
+            "-U",  # Include timestamps
+            "--ignore-unknown"
+        ] + metrics
+
+        logger.info(f"Command: pmrep -a {archive_base} -t 1sec -o csv -U --ignore-unknown [+ {len(metrics)} metrics]")
+
+        # Run pmrep and collect output
+        logger.info("Starting pmrep subprocess...")
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,  # Suppress stderr
+            text=True
+        )
+        logger.info(f"✓ pmrep process started (PID: {process.pid})")
+
+        # Read all CSV output
+        logger.info("Reading CSV output...")
+        csv_output, _ = process.communicate(timeout=300)  # 5 minute timeout
+
+        if process.returncode != 0:
+            logger.error(f"pmrep failed with return code {process.returncode}")
+            return None
+
+        logger.info(f"✓ CSV data collected ({len(csv_output)} bytes)")
+
+        # Parse CSV with pandas
+        df = parse_csv_with_pandas(csv_output, logger)
+
+        if df is None:
+            logger.error("Failed to parse CSV data")
+            return None
+
+        logger.info(f"✓ Data collected: {len(df)} rows, {len(df.columns)-1} metrics")
+        logger.info("===== DATA COLLECTION COMPLETE =====")
+
+        return df
+
+    except subprocess.TimeoutExpired:
+        logger.error("pmrep timed out after 5 minutes")
+        if 'process' in locals():
+            process.kill()
+        return None
+    except Exception as e:
+        logger.error(f"Error collecting metrics data: {e}", exc_info=True)
+        return None
+
+
+def save_csv_output(df: pd.DataFrame, archive_base: Path, logger) -> Optional[Path]:
+    """
+    Save DataFrame to CSV file on disk
+
+    Args:
+        df: pandas DataFrame with metrics data
+        archive_base: Path to PCP archive (used for naming)
+        logger: Logger instance
+
+    Returns:
+        Path to saved CSV file, or None if failed
+    """
+    if not SAVE_CSV_OUTPUT:
+        logger.debug("CSV output disabled (SAVE_CSV_OUTPUT=false)")
+        return None
+
+    logger.info("=" * 60)
+    logger.info("SAVING CSV OUTPUT")
+    logger.info("=" * 60)
+
+    try:
+        # Create output directory
+        output_dir = LOG_DIR / "csv_output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate CSV filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_name = archive_base.stem
+        csv_filename = f"pmrep_{archive_name}_{timestamp}.csv"
+        csv_path = output_dir / csv_filename
+
+        logger.info(f"Writing CSV to: {csv_path}")
+
+        # Write DataFrame to CSV
+        df.to_csv(csv_path, index=False)
+
+        file_size_mb = csv_path.stat().st_size / (1024 * 1024)
+        logger.info(f"✓ CSV saved: {file_size_mb:.2f} MB")
+        logger.info(f"  Rows: {len(df)}, Columns: {len(df.columns)}")
+        logger.info("=" * 60)
+
+        return csv_path
+
+    except Exception as e:
+        logger.error(f"Error saving CSV output: {e}", exc_info=True)
+        return None
+
+
+def write_to_influxdb(df: pd.DataFrame, logger) -> bool:
+    """
+    Write DataFrame to InfluxDB (only when ENABLE_INFLUXDB_WRITE=true)
+
+    This function:
+    1. Initializes InfluxDB client
+    2. Converts DataFrame to line protocol using dataframe_to_line_protocol()
+    3. Writes to InfluxDB in batches
+
+    Args:
+        df: pandas DataFrame with metrics data
+        logger: Logger instance
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not ENABLE_INFLUXDB_WRITE:
+        logger.info("InfluxDB writes disabled (ENABLE_INFLUXDB_WRITE=false)")
+        return True  # Return True since it's not an error, just disabled
+
+    logger.info("=" * 60)
+    logger.info("WRITING TO INFLUXDB")
+    logger.info("=" * 60)
+
+    try:
+        # Initialize InfluxDB client with connection pooling
+        logger.info(f"Connecting to InfluxDB: {INFLUXDB_URL}")
+        client = get_influx_client()
+
+        # Log the tag values being used
+        logger.info(f"Using tags: product_type={PRODUCT_TYPE}, serialNumber={SERIAL_NUMBER}")
+
+        # Tuned WriteOptions for high-throughput scenarios
+        write_options = WriteOptions(
+            batch_size=INFLUX_BATCH_SIZE,
+            flush_interval=15_000,
+            jitter_interval=1_000,
+            retry_interval=10_000,
+            max_retries=5,
+            max_retry_delay=60_000,
+            exponential_base=2,
+            max_retry_time=300_000
+        )
+        write_api = client.write_api(write_options=write_options)
+        logger.info("✓ Write API initialized with async batching")
+
+        # Convert DataFrame to line protocol
+        logger.info("Converting DataFrame to InfluxDB line protocol...")
+        line_protocol = dataframe_to_line_protocol(
+            df,
+            PRODUCT_TYPE,
+            SERIAL_NUMBER,
+            INFLUXDB_MEASUREMENT,
+            logger
+        )
+
+        if not line_protocol:
+            logger.error("Failed to convert DataFrame to line protocol")
+            return False
+
+        logger.info(f"✓ Converted to {len(line_protocol)} line protocol entries")
+
+        # Write in batches
+        logger.info(f"Writing to InfluxDB in batches of {INFLUX_BATCH_SIZE}...")
+        total_written = 0
+        batch_count = 0
+
+        for i in range(0, len(line_protocol), INFLUX_BATCH_SIZE):
+            batch = line_protocol[i:i + INFLUX_BATCH_SIZE]
+            write_api.write(bucket=INFLUXDB_BUCKET, record=batch)
+            total_written += len(batch)
+            batch_count += 1
+
+            if batch_count % PROGRESS_LOG_INTERVAL == 0:
+                logger.info(f"Progress: {total_written} points written ({batch_count} batches)...")
+
+        # Flush async writes
+        logger.info("Flushing async writes to InfluxDB...")
+        write_api.flush()
+        logger.info("All async writes completed")
+
+        logger.info(f"✓ Successfully wrote {total_written} points to InfluxDB")
+        logger.info("=" * 60)
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error writing to InfluxDB: {e}", exc_info=True)
+        return False
+
+
+def export_to_s3_parquet_wrapper(df: pd.DataFrame, logger) -> bool:
+    """
+    Export DataFrame to S3 in Parquet format (only when ENABLE_S3_EXPORT=true)
+
+    This function:
+    1. Adds partition columns (year, month, day, hour, product_type, serial_number)
+    2. Converts DataFrame to Parquet format using PyArrow
+    3. Uploads to S3 with Hive-style partitioning
+
+    Args:
+        df: pandas DataFrame with metrics data
+        logger: Logger instance
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not ENABLE_S3_EXPORT:
+        logger.info("S3 export disabled (ENABLE_S3_EXPORT=false)")
+        return True  # Return True since it's not an error, just disabled
+
+    if not S3_EXPORT_AVAILABLE:
+        logger.error("S3 export requested but s3_parquet_exporter module not available")
+        return False
+
+    logger.info("=" * 60)
+    logger.info("EXPORTING TO S3 PARQUET")
+    logger.info("=" * 60)
+
+    try:
+        # Initialize S3 exporter
+        exporter = S3ParquetExporter(PRODUCT_TYPE, SERIAL_NUMBER, logger)
+
+        # Add partition columns
+        logger.info("Adding partition columns...")
+        df_with_partitions = exporter.add_partition_columns(df.copy())
+
+        # Group by partition and export
+        partition_cols = ['year', 'month', 'day', 'hour', 'product_type', 'serial_number']
+        grouped = df_with_partitions.groupby(partition_cols, as_index=False)
+
+        total_partitions = len(grouped)
+        logger.info(f"Data split into {total_partitions} partition(s)")
+
+        success_count = 0
+        for partition_values, group_df in grouped:
+            # Create partition value dict
+            partition_dict = dict(zip(partition_cols, partition_values))
+            logger.info(f"Processing partition: {partition_dict}")
+
+            # Remove partition columns from data (they're in the path)
+            data_df = group_df.drop(columns=partition_cols)
+
+            # Convert to Parquet
+            table = exporter.convert_to_parquet(data_df)
+            if table is None:
+                continue
+
+            # Generate S3 key
+            s3_key = exporter.generate_s3_key(partition_dict)
+
+            # Upload to S3
+            if exporter.upload_to_s3(table, s3_key):
+                success_count += 1
+
+        logger.info(f"✓ S3 PARQUET EXPORT COMPLETE: {success_count}/{total_partitions} partitions uploaded")
+        logger.info("=" * 60)
+
+        return success_count == total_partitions
+
+    except Exception as e:
+        logger.error(f"Error during S3 Parquet export: {e}", exc_info=True)
+        return False
+
+
+def process_and_export_metrics(archive_base: Path, logger, metrics: List[str]) -> tuple[bool, Optional[Path]]:
+    """
+    Higher-level function to process and export metrics data
+
+    This function orchestrates the entire export pipeline:
+    1. Validates metrics (already done via get_available_metrics)
+    2. Collects data in pandas DataFrame (if pandas available)
+    3. Exports based on flags:
+       - SAVE_CSV_OUTPUT: Save to CSV file
+       - ENABLE_INFLUXDB_WRITE: Write to InfluxDB
+       - ENABLE_S3_EXPORT: Export to S3 Parquet
+
+    Args:
+        archive_base: Path to PCP archive base
+        logger: Logger instance
+        metrics: List of validated metrics
+
+    Returns:
+        tuple: (success: bool, csv_path: Optional[Path])
+    """
+    logger.info("=" * 80)
+    logger.info("STARTING METRICS PROCESSING AND EXPORT")
+    logger.info("=" * 80)
+
+    # Log export configuration
+    logger.info("Export configuration:")
+    logger.info(f"  - PANDAS_AVAILABLE: {PANDAS_AVAILABLE}")
+    logger.info(f"  - SAVE_CSV_OUTPUT: {SAVE_CSV_OUTPUT}")
+    logger.info(f"  - ENABLE_INFLUXDB_WRITE: {ENABLE_INFLUXDB_WRITE}")
+    logger.info(f"  - ENABLE_S3_EXPORT: {ENABLE_S3_EXPORT}")
+    logger.info(f"  - ENABLE_SNAME_PROCESSING: {ENABLE_SNAME_PROCESSING}")
+
+    # Log active value filters
+    if PCP_METRICS_FILTER:
+        filters_active = []
+        if "skip_zero" in PCP_METRICS_FILTER: filters_active.append("zero values")
+        if "skip_empty" in PCP_METRICS_FILTER: filters_active.append("empty strings")
+        if "skip_none" in PCP_METRICS_FILTER: filters_active.append("none/null values")
+        if filters_active:
+            logger.info(f"Value filtering ENABLED: skipping {', '.join(filters_active)}")
+    else:
+        logger.info("Value filtering DISABLED: all values will be exported")
+
+    csv_path = None
+
+    try:
+        # STEP 1: Collect metrics data in pandas DataFrame (NO InfluxDB processing yet)
+        logger.info("")
+        logger.info("STEP 1: Collecting metrics data...")
+        df = collect_metrics_data(archive_base, logger, metrics)
+
+        if df is None:
+            logger.error("Failed to collect metrics data - cannot proceed with pandas-based export")
+            logger.info("Falling back to streaming mode is not implemented in this refactored version")
+            return (False, None)
+
+        # STEP 2: Save CSV output (if enabled)
+        logger.info("")
+        logger.info("STEP 2: Saving CSV output (if enabled)...")
+        csv_path = save_csv_output(df, archive_base, logger)
+        if csv_path:
+            logger.info(f"✓ CSV saved to: {csv_path}")
+        else:
+            logger.info("CSV output skipped (SAVE_CSV_OUTPUT=false)")
+
+        # STEP 3: Write to InfluxDB (if enabled)
+        logger.info("")
+        logger.info("STEP 3: Writing to InfluxDB (if enabled)...")
+        influx_success = write_to_influxdb(df, logger)
+        if not influx_success and ENABLE_INFLUXDB_WRITE:
+            logger.error("Failed to write to InfluxDB")
+            return (False, csv_path)
+
+        # STEP 4: Export to S3 Parquet (if enabled)
+        logger.info("")
+        logger.info("STEP 4: Exporting to S3 Parquet (if enabled)...")
+        s3_success = export_to_s3_parquet_wrapper(df, logger)
+        if not s3_success and ENABLE_S3_EXPORT:
+            logger.error("Failed to export to S3 Parquet")
+            return (False, csv_path)
+
+        # Success summary
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("METRICS PROCESSING AND EXPORT COMPLETE")
+        logger.info("=" * 80)
+        logger.info(f"✓ Data rows processed: {len(df)}")
+        logger.info(f"✓ Metrics columns: {len(df.columns) - 1}")  # -1 for timestamp column
+        if csv_path:
+            logger.info(f"✓ CSV output: {csv_path}")
+        if ENABLE_INFLUXDB_WRITE:
+            logger.info(f"✓ InfluxDB: Data written")
+        if ENABLE_S3_EXPORT:
+            logger.info(f"✓ S3 Parquet: Data exported")
+        logger.info("=" * 80)
+
+        return (True, csv_path)
+
+    except subprocess.TimeoutExpired:
+        logger.error("Process timed out")
+        return (False, csv_path)
+    except Exception as e:
+        logger.error(f"Error during metrics processing and export: {e}", exc_info=True)
+        return (False, csv_path)
+
+
 def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[bool, Optional[Path]]:
-    """Process PCP archive data and export to InfluxDB or CSV based on flags"""
+    """
+    DEPRECATED: Use process_and_export_metrics() instead
+
+    This function is kept for backward compatibility but should not be used in new code.
+    It performs wasteful processing by converting to InfluxDB format even when writes are disabled.
+
+    Process PCP archive data and export to InfluxDB or CSV based on flags
+    """
     logger.info("===== STARTING DATA PROCESSING =====")
 
     # Log processing mode based on pandas availability
@@ -1408,7 +1814,7 @@ def process_archive(archive_path: Path, logger) -> bool:
         # Export to InfluxDB (pass discovered metrics)
         logger.info(f"[FLOW] Starting data export to InfluxDB...")
         start_time_export = time.time()
-        success, csv_file_path = export_to_influxdb(archive_base, logger, metrics)
+        success, csv_file_path = process_and_export_metrics(archive_base, logger, metrics)
         export_duration = time.time() - start_time_export
         logger.info(f"[FLOW] ✓ Data export completed in {export_duration:.2f} seconds")
 

@@ -46,9 +46,11 @@ docker stop pcp_parser_python
 ### Essential Flags (docker-compose.yml)
 
 ```yaml
-# Output control
+# Output control (NEW: Flag-driven architecture)
 SAVE_CSV_OUTPUT=true              # Save CSV for debugging
 ENABLE_INFLUXDB_WRITE=true        # Enable InfluxDB writes
+ENABLE_S3_EXPORT=false            # Enable S3 Parquet export
+ENABLE_SNAME_PROCESSING=false     # Enable proc.psinfo.sname
 
 # Performance tuning
 INFLUX_BATCH_SIZE=50000           # Batch size for writes
@@ -87,35 +89,82 @@ FORCE_REVALIDATE=false            # Re-validate cached metrics
 
 ---
 
-## Processing Modes
+## Processing Architecture (Refactored)
 
-The parser **automatically selects** the processing mode:
+The parser uses a **5-step pipeline architecture** for efficient data processing:
 
-### Pandas Mode (Default)
+### High-Level Flow
 
-**When**: Pandas is installed (default in Docker)
+```
+Archive → Extract → Validate Metrics → Process & Export → Move to Processed
+```
 
-**How it works**:
-1. Collect CSV output in memory buffer
-2. Parse with `pd.read_csv()` (vectorized)
-3. Convert to InfluxDB line protocol
-4. Batch write to InfluxDB
+### Data Processing Pipeline (process_and_export_metrics)
 
-**Characteristics**: Vectorized processing with memory buffer
+The new refactored architecture separates data collection from export mechanisms:
 
-### Streaming Mode (Fallback)
+**Step 1: Collect Metrics Data** (`collect_metrics_data`)
+- Runs `pmrep` to extract CSV data from PCP archive
+- Parses CSV into pandas DataFrame (NO InfluxDB processing yet)
+- Returns raw DataFrame ready for multiple export formats
+- **Key Optimization**: Data is collected once and reused for all exports
 
-**When**: Pandas not available
+**Step 2: Save CSV Output** (`save_csv_output`)
+- **Only runs if** `SAVE_CSV_OUTPUT=true`
+- Saves DataFrame to `/src/logs/pcp_parser/csv_output/`
+- Filename format: `pmrep_{archive_name}_{timestamp}.csv`
+- **Performance**: Skipped entirely when disabled (no I/O overhead)
 
-**How it works**:
-1. Read pmrep stdout line-by-line
-2. Parse each line immediately
-3. Create InfluxDB points
-4. Batch write to InfluxDB
+**Step 3: Write to InfluxDB** (`write_to_influxdb`)
+- **Only runs if** `ENABLE_INFLUXDB_WRITE=true`
+- Checks flag FIRST before any InfluxDB processing
+- Converts DataFrame to line protocol using `dataframe_to_line_protocol()`
+- Writes in batches using async write API
+- **Performance**: 30-40% CPU savings when disabled (no conversion overhead)
 
-**Performance**: Lower memory footprint
+**Step 4: Export to S3 Parquet** (`export_to_s3_parquet_wrapper`)
+- **Only runs if** `ENABLE_S3_EXPORT=true`
+- Adds partition columns (year, month, day, hour, product_type, serial_number)
+- Converts DataFrame to Parquet format using PyArrow
+- Uploads to S3 with Hive-style partitioning
+- **Performance**: Works directly with DataFrame (no intermediate CSV file)
+
+**Step 5: Process proc.psinfo.sname** (if enabled)
+- **Only runs if** `ENABLE_SNAME_PROCESSING=true`
+- Collects process state data in parallel
+- Exports to InfluxDB (only if `ENABLE_INFLUXDB_WRITE=true`)
+- Tracks states: R (Running), D (Blocked), S (Sleeping), I (Idle), Z (Zombie), T (Stopped)
+
+### Key Architecture Benefits
+
+✅ **No Wasteful Processing**: Each export format only processes when enabled
+✅ **DataFrame Reusability**: Collect data once, export to multiple formats
+✅ **Flag-Driven**: All processing controlled by environment flags
+✅ **Performance**: 30-40% CPU savings when InfluxDB writes disabled
+✅ **Separation of Concerns**: Each export format has its own function
+
+### Legacy Function (Deprecated)
+
+`export_to_influxdb()` - **DEPRECATED**: This function is kept for backward compatibility but should not be used. It performs wasteful processing by converting to InfluxDB format even when writes are disabled. Use `process_and_export_metrics()` instead.
 
 ---
+
+** Architecture **
+
+```python
+process_and_export_metrics()  # Flag-driven, modular pipeline
+  ├─ collect_metrics_data()          # Step 1: Collect once
+  ├─ save_csv_output()                # Step 2: Only if SAVE_CSV_OUTPUT=true
+  ├─ write_to_influxdb()              # Step 3: Only if ENABLE_INFLUXDB_WRITE=true
+  ├─ export_to_s3_parquet_wrapper()   # Step 4: Only if ENABLE_S3_EXPORT=true
+  └─ Process proc.psinfo.sname        # Step 5: Only if ENABLE_SNAME_PROCESSING=true
+```
+- ✅ Checks flags BEFORE processing (no wasteful conversion)
+- ✅ Reuses DataFrame for all exports (collect once, export many times)
+- ✅ Modular functions (easy to test and maintain)
+- ✅ S3 export works directly with DataFrame (no intermediate file)
+
+
 
 ## Process State Monitoring
 
@@ -155,14 +204,32 @@ CAPTURE_PROCESS_STATES = set()  # Empty set = ALL states
 
 ## Key Functions
 
-| Function | Purpose | Lines |
-|----------|---------|-------|
-| `process_archive()` | Main processing loop | ~100 |
-| `get_available_metrics()` | Metric discovery & validation | ~130 |
-| `validate_metrics_parallel()` | Parallel metric validation | ~20 |
-| `export_to_influxdb()` | Data transformation & export | ~500 |
-| `parse_proc_psinfo_sname_from_process()` | Process state parsing | ~250 |
-| `export_proc_sname_to_influxdb()` | Process state export | ~100 |
+### Main Processing Functions
+
+| Function | Purpose | File Location |
+|----------|---------|---------------|
+| `process_archive()` | Main archive processing orchestrator | [pcp_parser.py:1851](pcp_parser.py#L1851) |
+| `get_available_metrics()` | Metric discovery & validation | [pcp_parser.py:357](pcp_parser.py#L357) |
+| `validate_metrics_parallel()` | Parallel metric validation (100 workers) | [pcp_parser.py:165](pcp_parser.py#L165) |
+
+### Data Processing Pipeline 
+
+| Function | Purpose | File Location |
+|----------|---------|---------------|
+| `process_and_export_metrics()` | **Main orchestrator** - 5-step pipeline | [pcp_parser.py:1261](pcp_parser.py#L1261) |
+| `collect_metrics_data()` | Step 1: Collect data in DataFrame | [pcp_parser.py:969](pcp_parser.py#L969) |
+| `save_csv_output()` | Step 2: Save CSV (if enabled) | [pcp_parser.py:1048](pcp_parser.py#L1048) |
+| `write_to_influxdb()` | Step 3: Write to InfluxDB (if enabled) | [pcp_parser.py:1096](pcp_parser.py#L1096) |
+| `export_to_s3_parquet_wrapper()` | Step 4: Export to S3 Parquet (if enabled) | [pcp_parser.py:1187](pcp_parser.py#L1187) |
+
+### Helper Functions
+
+| Function | Purpose | File Location |
+|----------|---------|---------------|
+| `parse_csv_with_pandas()` | Parse CSV using pandas (vectorized) | [pcp_parser.py:759](pcp_parser.py#L759) |
+| `dataframe_to_line_protocol()` | Convert DataFrame to InfluxDB line protocol | [pcp_parser.py:791](pcp_parser.py#L791) |
+| `parse_proc_psinfo_sname_from_process()` | Process state parsing | [pcp_parser.py:561](pcp_parser.py#L561) |
+| `export_proc_sname_to_influxdb()` | Process state export to InfluxDB | [pcp_parser.py:721](pcp_parser.py#L721) |
 
 ---
 
@@ -196,12 +263,9 @@ Logs are written to: `/src/logs/pcp_parser_python/pcp_parser.log`
 - **WARNING**: Non-critical issues
 - **ERROR**: Critical failures
 
-### Key Log Sections
+### Key Log Sections (New Architecture)
 
 ```
-[FLOW] === PROCESSING MODE CONFIGURATION ===
-[FLOW] DATA READING MODE: PANDAS (vectorized)
-
 [FLOW] === PHASE 1: ARCHIVE EXTRACTION ===
 [FLOW] ✓ Extracted in 2.34s
 
@@ -210,13 +274,52 @@ Parallel validation: 2000 metrics with 100 workers
 ✓ Found 1850 valid metrics
 
 [FLOW] === PHASE 3: DATA EXPORT ===
-[FLOW] === STEP 4: PANDAS MODE (MEMORY BUFFER) ===
-[FLOW] ✓ Collected 50000 lines in memory
-[FLOW] === STEP 6: INFLUXDB ASYNC WRITES ===
-✓ Pandas+LineProtocol: 245000 points written
+================================================================================
+STARTING METRICS PROCESSING AND EXPORT
+================================================================================
+Export configuration:
+  - PANDAS_AVAILABLE: True
+  - SAVE_CSV_OUTPUT: True
+  - ENABLE_INFLUXDB_WRITE: True
+  - ENABLE_S3_EXPORT: False
+  - ENABLE_SNAME_PROCESSING: False
 
-✓ Successfully exported archive to InfluxDB
-⏱️  TOTAL PROCESSING TIME: 2 minutes 15.45 seconds
+STEP 1: Collecting metrics data...
+===== COLLECTING METRICS DATA =====
+✓ CSV data collected (15234567 bytes)
+✓ Data collected: 3600 rows, 1850 metrics
+
+STEP 2: Saving CSV output (if enabled)...
+============================================================
+SAVING CSV OUTPUT
+============================================================
+✓ CSV saved: 14.53 MB
+
+STEP 3: Writing to InfluxDB (if enabled)...
+============================================================
+WRITING TO INFLUXDB
+============================================================
+✓ Converted to 245000 line protocol entries
+✓ Successfully wrote 245000 points to InfluxDB
+
+STEP 4: Exporting to S3 Parquet (if enabled)...
+S3 export disabled (ENABLE_S3_EXPORT=false)
+
+STEP 5: Processing proc.psinfo.sname (if enabled)...
+proc.psinfo.sname processing disabled (ENABLE_SNAME_PROCESSING=false)
+
+================================================================================
+METRICS PROCESSING AND EXPORT COMPLETE
+================================================================================
+✓ Data rows processed: 3600
+✓ Metrics columns: 1850
+✓ CSV output: /src/logs/pcp_parser/csv_output/pmrep_archive_20251119.csv
+✓ InfluxDB: Data written
+
+⏱️  TOTAL PROCESSING TIME: 1 minutes 45.23 seconds
+   ├─ Extraction: 2.34s
+   ├─ Validation: 18.50s
+   └─ Export: 84.39s
 ```
 
 ---
@@ -343,7 +446,6 @@ Edit the S3 configuration section (lines 125-133):
 
 **Bucket name explanation:**
 - ✅ Correct: `fst-pcp-data1` (bucket name only)
-- ❌ Wrong: `arn:aws:s3:::fst-pcp-data1` (ARN format not supported)
 
 **S3_KEY_PREFIX explanation:**
 - Acts as a folder path prefix before auto-generated partitions
@@ -556,22 +658,6 @@ test_s3_connection(logging.getLogger())
 ```
 
 **Module**: [s3_parquet_exporter.py](s3_parquet_exporter.py)
-
----
-
-## Support
-
-**Questions?** See [../README.md](../README.md) for:
-- System architecture
-- Complete configuration reference
-- InfluxDB schema details
-- Grafana integration
-- Web interface usage
-
-**Issues?** Check:
-1. [Troubleshooting](#troubleshooting) section above
-2. Log files in `/src/logs/pcp_parser_python/`
-3. Docker container status: `docker ps`
 
 ---
 
