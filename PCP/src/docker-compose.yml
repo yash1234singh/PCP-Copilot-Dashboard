@@ -106,7 +106,7 @@ services:
       - PRODUCT_TYPE=${PRODUCT_TYPE:-SERVER1}
       - SERIAL_NUMBER=${SERIAL_NUMBER:-1234}
       - VALIDATION_BATCH_SIZE=500
-      - INFLUX_BATCH_SIZE=200000
+      - INFLUX_BATCH_SIZE=50000
       - PROGRESS_LOG_INTERVAL=50
       - SKIP_VALIDATION=false
       - FORCE_REVALIDATE=false
@@ -118,9 +118,19 @@ services:
       - ENABLE_KERNEL_METRICS=true
       - ENABLE_SWAP_METRICS=false
       - ENABLE_NFS_METRICS=false
-      # CSV processing optimizations
-      - SAVE_CSV_OUTPUT=false
-      - USE_MEMORY_BUFFER=true
+      # Output configuration
+      - SAVE_CSV_OUTPUT=false              # Save CSV files for debugging (pandas uses memory buffer automatically)
+      - ENABLE_INFLUXDB_WRITE=true        # Enable/disable InfluxDB writes (useful for testing)
+      - ENABLE_SNAME_PROCESSING=true  # Enable/disable proc.psinfo.sname (causes timeouts)
+      # S3 Parquet export configuration
+      - ENABLE_S3_EXPORT=false                 # Set to 'true' to enable S3 Parquet export
+      - S3_BUCKET_NAME=fst-pcp-data1              # Bucket name (NOT ARN) - change to your bucket name
+      - S3_KEY_PREFIX=""                            # Directory prefix in bucket (empty = root, e.g., "metrics/prod/")
+      - AWS_REGION=us-west-2                      # AWS region where bucket is located
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}  # AWS credentials from .env file
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}  # AWS credentials from .env file
+      - PARQUET_COMPRESSION=snappy                # Compression: snappy (fast), gzip, brotli, lz4, zstd
+      - PARQUET_ROW_GROUP_SIZE=100000             # Rows per Parquet row group
       # Parser identifier for coordination
       - PARSER_ID=python
     depends_on:
@@ -164,7 +174,7 @@ services:
       - SERIAL_NUMBER=${SERIAL_NUMBER:-1234}
       # Performance tuning (higher = faster but more memory)
       - VALIDATION_BATCH_SIZE=500
-      - INFLUX_BATCH_SIZE=200000
+      - INFLUX_BATCH_SIZE=50000
       - PROGRESS_LOG_INTERVAL=50
       # Validation control
       - SKIP_VALIDATION=false         # Skip validation entirely (NOT RECOMMENDED - causes 0 data points!)
@@ -178,9 +188,8 @@ services:
       - ENABLE_KERNEL_METRICS=true      # kernel.* metrics
       - ENABLE_SWAP_METRICS=false       # swap.* metrics
       - ENABLE_NFS_METRICS=false        # nfs.* metrics (often have PM_ERR_INDOM_LOG errors)
-      # CSV processing optimizations
-      - SAVE_CSV_OUTPUT=false
-      - USE_MEMORY_BUFFER=false
+      # Output configuration
+      - SAVE_CSV_OUTPUT=false           # CSV output disabled for Go parser
       # Parser identifier for coordination
       - PARSER_ID=go
     depends_on:
@@ -224,7 +233,7 @@ services:
       - SERIAL_NUMBER=${SERIAL_NUMBER:-1234}
       # Performance tuning (higher = faster but more memory)
       - VALIDATION_BATCH_SIZE=1000
-      - INFLUX_BATCH_SIZE=200000
+      - INFLUX_BATCH_SIZE=50000
       - PROGRESS_LOG_INTERVAL=50
       # Validation control
       - SKIP_VALIDATION=false         # Skip validation entirely (NOT RECOMMENDED - causes 0 data points!)

@@ -36,9 +36,7 @@ This volume persists:
 - WAL (Write-Ahead Log)
 - User data
 
-## Future Enhancements
-
-### Custom Configuration
+## Custom Configuration
 
 To add custom InfluxDB configuration:
 

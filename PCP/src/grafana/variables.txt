@@ -1,0 +1,121 @@
+# Metric to Database Field Mapping
+# Format: metric_name -> field1, field2, ...
+# Empty mapping means field does not exist in database
+
+
+## SYSTEM INFORMATION & HARDWARE
+hinv.ncpu -> hinv_ncpu
+hinv.physmem -> hinv_physmem
+hinv.pagesize -> hinv_pagesize
+hinv.ndisk -> hinv_ndisk
+hinv.cpu.model_name -> (no match)
+hinv.cpu.clock -> hinv_cpu_clock_cpu0, hinv_cpu_clock_cpu1, hinv_cpu_clock_cpu2, hinv_cpu_clock_cpu3, hinv_cpu_clock_cpu4, hinv_cpu_clock_cpu5, hinv_cpu_clock_cpu6, hinv_cpu_clock_cpu7
+kernel.uname.release -> (no match)
+kernel.uname.nodename -> (no match)
+kernel.uname.distro -> (no match)
+kernel.all.uptime -> kernel_all_uptime
+
+## CPU UTILIZATION & PERFORMANCE
+kernel.all.cpu.user -> (no match)
+kernel.all.cpu.sys -> (no match)
+kernel.all.cpu.idle -> (no match)
+kernel.all.cpu.wait.total -> (no match)
+kernel.all.cpu.steal -> (no match)
+kernel.all.cpu.irq.soft -> (no match)
+kernel.all.cpu.irq.hard -> (no match)
+kernel.all.load -> kernel_all_load_15_minute, kernel_all_load_1_minute, kernel_all_load_5_minute
+kernel.all.running -> kernel_all_running
+kernel.all.blocked -> kernel_all_blocked
+kernel.all.pswitch -> (no match)
+kernel.all.intr -> (no match)
+kernel.cpu.util.user -> (no match)
+kernel.cpu.util.sys -> (no match)
+kernel.cpu.util.idle -> (no match)
+
+## MEMORY UTILIZATION
+mem.physmem -> mem_physmem
+mem.freemem -> mem_freemem
+mem.util.used -> mem_util_used
+mem.util.free -> mem_util_free
+mem.util.cached -> mem_util_cached
+mem.util.bufmem -> mem_util_bufmem
+mem.util.active -> mem_util_active
+mem.util.inactive -> mem_util_inactive
+mem.util.swapTotal -> mem_util_swapTotal
+mem.util.swapFree -> mem_util_swapFree
+mem.util.swapCached -> mem_util_swapCached
+mem.util.dirty -> mem_util_dirty
+mem.util.slab -> mem_util_slab
+mem.util.available -> mem_util_available
+mem.vmstat.pgpgin -> (no match)
+mem.vmstat.pgpgout -> (no match)
+mem.vmstat.pswpin -> (no match)
+mem.vmstat.pswpout -> (no match)
+mem.vmstat.pgfault -> (no match)
+mem.vmstat.pgmajfault -> (no match)
+
+## DISK I/O PERFORMANCE
+disk.all.read -> (no match)
+disk.all.write -> (no match)
+disk.all.total -> (no match)
+disk.all.read_bytes -> (no match)
+disk.all.write_bytes -> (no match)
+disk.all.total_bytes -> (no match)
+disk.dev.read -> (no match)
+disk.dev.write -> (no match)
+disk.dev.read_bytes -> (no match)
+disk.dev.write_bytes -> (no match)
+disk.dev.avactive -> (no match)
+disk.dev.await -> (no match)
+disk.dev.util -> (no match)
+disk.dev.avg_qlen -> (no match)
+disk.dev.avg_rqsz -> (no match)
+
+## FILESYSTEM
+filesys.capacity -> filesys_capacity_/dev/mapper/vg_jaguar_log, filesys_capacity_/dev/mapper/vg_jaguar_var, filesys_capacity_/dev/root, filesys_capacity_/dev/sda1
+filesys.used -> (no match)
+filesys.free -> (no match)
+filesys.full -> filesys_full_/dev/mapper/vg_jaguar_log, filesys_full_/dev/mapper/vg_jaguar_var, filesys_full_/dev/root, filesys_full_/dev/sda1
+vfs.files.count -> vfs_files_count
+
+## NETWORK PERFORMANCE
+network.interface.in.bytes -> (no match)
+network.interface.out.bytes -> (no match)
+network.interface.total.bytes -> (no match)
+network.interface.in.packets -> (no match)
+network.interface.out.packets -> (no match)
+network.interface.in.errors -> (no match)
+network.interface.out.errors -> (no match)
+network.interface.in.drops -> (no match)
+network.interface.out.drops -> (no match)
+network.interface.up -> network_interface_up_bear_gogo, network_interface_up_eth0, network_interface_up_int_maint, network_interface_up_lo, network_interface_up_vlan100, network_interface_up_vlan_bear_gogo, network_interface_up_wlan0, network_interface_up_wlan1
+network.tcp.activeopens -> (no match)
+network.tcp.currestab -> network_tcp_currestab
+network.tcp.insegs -> (no match)
+network.tcp.outsegs -> (no match)
+network.tcp.retranssegs -> (no match)
+network.udp.indatagrams -> (no match)
+network.udp.outdatagrams -> (no match)
+network.ip.inreceives -> (no match)
+network.ip.outrequeststot -> (no match)
+network.softnet.dropped -> (no match)
+
+## PROCESS & SYSTEM ACTIVITY
+kernel.all.nprocs -> kernel_all_nprocs
+kernel.all.sysfork -> (no match)
+kernel.all.lastpid -> (no match)
+kernel.all.runnable -> kernel_all_runnable
+kernel.all.nusers -> kernel_all_nusers
+proc.psinfo.sname -> (no match)
+vfs.inodes.free -> vfs_inodes_free
+vfs.dentry.count -> vfs_dentry_count
+ipc.shm.tot -> ipc_shm_tot
+
+## THERMAL & POWER MONITORING
+psoc.now.temp.psoc -> (no match)
+psoc.now.temp.sensor1 -> (no match)
+psoc.now.vltg.12vbus -> (no match)
+psoc.now.cur.12vbus -> (no match)
+psoc.now.fan.rpm -> (no match)
+psoc.now.status.power_led -> (no match)
+psoc.past.status.powergoodhrs -> (no match)

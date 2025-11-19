@@ -16,21 +16,13 @@ RUN pip3 install \
     requests \
     pandas \
     numpy \
-    # Optional: Install faster CSV parsing (if needed)
-    # python-snappy \  # For compression support
-    # pyarrow \        # For faster parquet/dataframe operations
+    pyarrow \
+    boto3 \
     && pip3 cache purge
 
-# Parser configuration - OPTIMIZED for high-throughput
+# Parser configuration - Simplified (pandas always used when available)
 ENV SAVE_CSV_OUTPUT=false
-ENV USE_MEMORY_BUFFER=true
 ENV INFLUX_BATCH_SIZE=200000
-ENV ENABLE_PARALLEL_VALIDATION=true
-ENV PARALLEL_VALIDATION_WORKERS=100
-ENV ENABLE_LZ4_DECOMPRESSION=false
-ENV ENABLE_STREAMING_PMREP=true
-ENV ENABLE_PARALLEL_PMREP=false
-ENV PARALLEL_PMREP_WORKERS=3
 
 WORKDIR /app
 

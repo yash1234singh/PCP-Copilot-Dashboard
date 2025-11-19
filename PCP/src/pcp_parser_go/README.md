@@ -1,6 +1,6 @@
 # PCP Parser - Go Implementation
 
-This is a Go reimplementation of the Python PCP parser. It provides the same functionality with improved performance and lower resource usage.
+Go implementation of the PCP parser providing the same functionality as the Python version.
 
 ## Features
 
@@ -15,23 +15,23 @@ This is a Go reimplementation of the Python PCP parser. It provides the same fun
 - ✅ **Logging** - Dual logging to file and console
 - ✅ **Archive management** - Moves processed/failed archives
 
-## Advantages over Python Version
+## Characteristics
 
 ### Performance
-- **Faster startup** - Compiled binary starts instantly
-- **Lower memory usage** - No Python interpreter overhead
-- **Concurrent processing** - Go's goroutines for parallel operations
-- **Efficient CSV parsing** - Native Go CSV reader
+- Compiled binary with instant startup
+- Low memory usage (no interpreter overhead)
+- Concurrent processing using goroutines
+- Native Go CSV parsing
 
 ### Reliability
-- **Type safety** - Compile-time type checking
-- **No runtime dependencies** - Single statically-linked binary
-- **Better error handling** - Explicit error checking
+- Type safety with compile-time checking
+- Single statically-linked binary
+- Explicit error handling
 
 ### Deployment
-- **Smaller image** - ~50MB vs ~400MB (Python + dependencies)
-- **Faster builds** - Multi-stage Docker build with caching
-- **Cross-compilation** - Can build for any platform
+- Compact image (~50MB)
+- Multi-stage Docker build with caching
+- Cross-platform compilation support
 
 ## Architecture
 
@@ -201,17 +201,17 @@ Logs are written to:
 - **File**: `/src/logs/pcp_parser/pcp_parser.log`
 - **Console**: Docker logs (via `docker logs pcp_parser`)
 
-## Performance Comparison
+## Implementation Comparison
 
-| Metric | Python | Go | Improvement |
+| Metric | Python | Go | Difference |
 |--------|--------|----|-----------|
-| **Startup Time** | ~3-5 seconds | ~0.5 seconds | **6-10x faster** |
-| **Memory Usage** | ~150-200 MB | ~30-50 MB | **4-5x less** |
+| **Startup Time** | ~3-5 seconds | ~0.5 seconds | Go starts quicker |
+| **Memory Usage** | ~150-200 MB | ~30-50 MB | Go uses less memory |
 | **Processing Speed** | Baseline | Similar* | Comparable |
 | **Binary Size** | N/A | ~15 MB | Compiled binary |
-| **Image Size** | ~400 MB | ~250 MB | **37% smaller** |
+| **Image Size** | ~400 MB | ~250 MB | Go image smaller |
 
-\* Processing speed is similar because both versions are bottlenecked by `pmrep` command execution, which is the same PCP tool.
+\* Processing speed is comparable because both versions are bottlenecked by `pmrep` command execution, which is the same PCP tool.
 
 ## Limitations
 
@@ -223,7 +223,7 @@ Logs are written to:
    - **Workaround**: Run Python version once to generate validation cache
 
 2. **InfluxDB health check** - Simplified in Go version
-   - Python version has robust HTTP ping check
+   - Python version has HTTP ping check
    - Go version has TODO placeholder
    - **Workaround**: InfluxDB dependency ensures it's ready
 
@@ -232,30 +232,30 @@ Logs are written to:
    - Go version reads settings but doesn't filter yet
    - **Impact**: Minor - can be added later
 
-### Recommended Usage
+### Usage Options
 
-**For production use**, you have two options:
+You have two options for parser selection:
 
-1. **Use Go parser with existing cache** (Recommended)
+1. **Use Go parser with existing cache**
    - Run Python version once to generate validation cache
    - Switch to Go parser for daily operations
-   - Much lower resource usage
+   - Lower resource usage
 
-2. **Use Python parser** (Current)
-   - Fully featured validation
-   - Battle-tested implementation
+2. **Use Python parser**
+   - Full validation features
+   - Comprehensive implementation
    - Higher resource usage
 
-## Future Enhancements
+## Planned Features
 
-- [ ] Implement full metric validation in Go
-- [ ] Add metric discovery using `pminfo` command
-- [ ] Implement batch validation testing
-- [ ] Add category-based filtering
-- [ ] Improve InfluxDB health checking
-- [ ] Add progress bars for long operations
-- [ ] Implement concurrent archive processing
-- [ ] Add metrics for monitoring (Prometheus-style)
+- [ ] Full metric validation in Go
+- [ ] Metric discovery using `pminfo` command
+- [ ] Batch validation testing
+- [ ] Category-based filtering
+- [ ] InfluxDB health checking
+- [ ] Progress bars for long operations
+- [ ] Concurrent archive processing
+- [ ] Monitoring metrics (Prometheus-style)
 
 ## Testing
 

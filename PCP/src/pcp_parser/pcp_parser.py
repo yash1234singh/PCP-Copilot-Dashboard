@@ -33,6 +33,14 @@ except ImportError:
     pd = None
     np = None
 
+# Import S3 Parquet exporter (optional)
+try:
+    from s3_parquet_exporter import export_to_s3_parquet, ENABLE_S3_EXPORT
+    S3_EXPORT_AVAILABLE = True
+except ImportError:
+    S3_EXPORT_AVAILABLE = False
+    ENABLE_S3_EXPORT = False
+
 # Configuration from environment variables
 WATCH_DIR = Path(os.getenv("WATCH_DIR", "/src/input/raw"))
 EXTRACT_DIR = Path(os.getenv("EXTRACT_DIR", "/tmp/pcp_archives"))
@@ -74,13 +82,11 @@ ENABLE_SWAP_METRICS = os.getenv("ENABLE_SWAP_METRICS", "true").lower() == "true"
 ENABLE_NFS_METRICS = os.getenv("ENABLE_NFS_METRICS", "false").lower() == "true"  # nfs.* metrics (often have PM_ERR_INDOM_LOG errors)
 
 SAVE_CSV_OUTPUT = os.getenv("SAVE_CSV_OUTPUT", "true").lower() == "true"
-USE_MEMORY_BUFFER = os.getenv("USE_MEMORY_BUFFER", "false").lower() == "true"
-ENABLE_PARALLEL_VALIDATION = os.getenv("ENABLE_PARALLEL_VALIDATION", "true").lower() == "true"
-ENABLE_LZ4_DECOMPRESSION = os.getenv("ENABLE_LZ4_DECOMPRESSION", "false").lower() == "true"
-ENABLE_STREAMING_PMREP = os.getenv("ENABLE_STREAMING_PMREP", "true").lower() == "true"
-ENABLE_PARALLEL_PMREP = os.getenv("ENABLE_PARALLEL_PMREP", "false").lower() == "true"
-PARALLEL_VALIDATION_WORKERS = int(os.getenv("PARALLEL_VALIDATION_WORKERS", "100"))
-PARALLEL_PMREP_WORKERS = int(os.getenv("PARALLEL_PMREP_WORKERS", "3"))
+ENABLE_INFLUXDB_WRITE = os.getenv("ENABLE_INFLUXDB_WRITE", "true").lower() == "true"  # Enable/disable InfluxDB writes
+ENABLE_SNAME_PROCESSING = os.getenv("ENABLE_SNAME_PROCESSING", "false").lower() == "true"  # Enable/disable proc.psinfo.sname (causes timeouts)
+
+# Constants for parallel processing (no need for env variable - always use optimal values)
+PARALLEL_VALIDATION_WORKERS = 100  # Optimal worker count for parallel validation
 
 _metrics_cache: Set[str] = set()
 _influx_client = None
@@ -143,10 +149,7 @@ def validate_single_metric(metric: str, archive_base: Path) -> bool:
 
 
 def validate_metrics_parallel(metrics: List[str], archive_base: Path, logger) -> List[str]:
-    """Validate metrics in parallel using ThreadPoolExecutor"""
-    if not ENABLE_PARALLEL_VALIDATION:
-        return None
-
+    """Validate metrics in parallel using ThreadPoolExecutor (always parallel for performance)"""
     logger.info(f"Parallel validation: {len(metrics)} metrics with {PARALLEL_VALIDATION_WORKERS} workers")
 
     valid_metrics = []
@@ -181,30 +184,23 @@ def get_influx_client() -> InfluxDBClient:
             url=INFLUXDB_URL,
             token=INFLUXDB_TOKEN,
             org=INFLUXDB_ORG,
-            timeout=60_000,  # 60 second timeout for large batches
+            timeout=180_000,  # 3 minutes timeout for large batches
             enable_gzip=True,  # Compress payloads to reduce network transfer time
             connection_pool_maxsize=20  # Connection pool for parallel writes (default is 10)
         )
     return _influx_client
 
 
-def extract_archive_fast(archive_path: Path, extract_path: Path, logger) -> float:
-    """Extract archive using lz4 if available, otherwise standard tar.xz"""
+def extract_archive(archive_path: Path, extract_path: Path, logger) -> float:
+    """Extract tar.xz archive"""
     start_time = time.time()
-
-    if ENABLE_LZ4_DECOMPRESSION and archive_path.suffix == '.lz4':
-        try:
-            subprocess.run(["lz4", "-d", str(archive_path), "-"], stdout=subprocess.PIPE, check=True)
-            subprocess.run(["tar", "-xf", "-", "-C", str(extract_path)], check=True)
-            duration = time.time() - start_time
-            logger.info(f"lz4 extraction: {duration:.2f}s")
-            return duration
-        except Exception as e:
-            logger.warning(f"lz4 failed: {e}, using standard")
 
     with tarfile.open(archive_path, 'r:xz') as tar:
         tar.extractall(extract_path)
-    return time.time() - start_time
+
+    duration = time.time() - start_time
+    logger.info(f"Archive extraction: {duration:.2f}s")
+    return duration
 
 
 def load_config_from_env_file():
@@ -344,55 +340,10 @@ def get_available_metrics(archive_base: Path, logger) -> List[str]:
         if SKIP_VALIDATION:
             logger.warning(f"⚠️  SKIP_VALIDATION=true: Using all {len(all_metric_names)} metrics WITHOUT validation (may cause errors!)")
             valid_metrics = all_metric_names
-            invalid_count = 0
         else:
-            logger.info(f"Found {len(all_metric_names)} total metrics, validating each one...")
-
+            logger.info(f"Found {len(all_metric_names)} total metrics, validating with parallel workers...")
+            # Always use parallel validation for best performance
             valid_metrics = validate_metrics_parallel(all_metric_names, archive_base, logger)
-
-            if valid_metrics is None:
-                # Fall back to sequential validation
-                valid_metrics = []
-                invalid_count = 0
-                batch_size = VALIDATION_BATCH_SIZE  # Test metrics in batches for speed (configurable)
-
-                # Test metrics in batches to validate they work with pmrep
-                for i in range(0, len(all_metric_names), batch_size):
-                    batch = all_metric_names[i:i+batch_size]
-
-                    # Try to fetch this batch with pmrep (--ignore-unknown skips invalid metrics)
-                    test_result = subprocess.run(
-                        ["pmrep", "-a", str(archive_base), "-s", "1", "-o", "csv", "--ignore-unknown"] + batch,
-                        capture_output=True,
-                        text=True,
-                        timeout=10
-                    )
-
-                    # If batch succeeds, all metrics in it are valid
-                    if test_result.returncode == 0 and test_result.stdout.strip():
-                        valid_metrics.extend(batch)
-                    else:
-                        # Batch failed, test each metric individually
-                        for metric in batch:
-                            test_single = subprocess.run(
-                                ["pmrep", "-a", str(archive_base), "-s", "1", "-o", "csv", "--ignore-unknown", metric],
-                                capture_output=True,
-                                text=True,
-                                timeout=5
-                            )
-                            if test_single.returncode == 0 and test_single.stdout.strip():
-                                valid_metrics.append(metric)
-                            else:
-                                invalid_count += 1
-
-                    # Progress update every 200 metrics
-                    if (i + batch_size) % 200 == 0:
-                        logger.info(f"Validated {min(i + batch_size, len(all_metric_names))}/{len(all_metric_names)} metrics...")
-
-                logger.info(f"Found {len(valid_metrics)} valid metrics (filtered out {invalid_count} invalid/derived metrics)")
-            else:
-                invalid_count = len(all_metric_names) - len(valid_metrics)
-                logger.info(f"Found {len(valid_metrics)} valid metrics (filtered out {invalid_count} invalid/derived metrics)")
 
         # Apply category filters
         original_count = len(valid_metrics)
@@ -424,6 +375,9 @@ def get_available_metrics(archive_base: Path, logger) -> List[str]:
                 continue
             if metric.startswith('nfs.') and not ENABLE_NFS_METRICS:
                 filter_stats['nfs'] = filter_stats.get('nfs', 0) + 1
+                continue
+            if metric == 'proc.psinfo.sname' and not ENABLE_SNAME_PROCESSING:
+                filter_stats['sname'] = filter_stats.get('sname', 0) + 1
                 continue
 
             # Metric passed all filters
@@ -591,9 +545,9 @@ def parse_proc_psinfo_sname_from_process(pmrep_process, archive_base: Path, logg
         # Wait for pmrep process to complete and get output
         logger.info("Waiting for pmrep process to complete...")
         try:
-            stdout, stderr = pmrep_process.communicate(timeout=120)
+            stdout, stderr = pmrep_process.communicate(timeout=300)  # Increased to 5 minutes
         except subprocess.TimeoutExpired:
-            logger.error("✗ pmrep process timed out after 120 seconds")
+            logger.error("✗ pmrep process timed out after 300 seconds")
             pmrep_process.kill()
             return []
 
@@ -882,8 +836,11 @@ def export_proc_sname_to_influxdb(data_points: List[Dict[str, Any]], logger, wri
             logger.info(f"    {state_name} ({state}): {count} points")
 
         try:
-            write_api.write(bucket=INFLUXDB_BUCKET, record=points)
-            logger.info(f"✓ Successfully wrote {len(points)} proc.psinfo.sname points to InfluxDB")
+            if ENABLE_INFLUXDB_WRITE:
+                write_api.write(bucket=INFLUXDB_BUCKET, record=points)
+                logger.info(f"✓ Successfully wrote {len(points)} proc.psinfo.sname points to InfluxDB")
+            else:
+                logger.info(f"✓ Processed {len(points)} proc.psinfo.sname points (not written, ENABLE_INFLUXDB_WRITE=false)")
 
             if error_count > 0:
                 logger.warning(f"  Errors during point creation: {error_count}")
@@ -1009,9 +966,36 @@ def dataframe_to_line_protocol(df: pd.DataFrame, product_type: str, serial_numbe
 
 
 def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[bool, Optional[Path]]:
-    """Export metrics to InfluxDB using Python influxdb-client"""
-    logger.info("===== STARTING EXPORT TO INFLUXDB =====")
-    logger.info(f"Using Python InfluxDB client (pcp2influxdb uses v1 API, we need v2)")
+    """Process PCP archive data and export to InfluxDB or CSV based on flags"""
+    logger.info("===== STARTING DATA PROCESSING =====")
+
+    # Log processing mode based on pandas availability
+    logger.info("[FLOW] === PROCESSING MODE CONFIGURATION ===")
+    if PANDAS_AVAILABLE:
+        logger.info("[FLOW] DATA READING MODE: PANDAS (vectorized)")
+        logger.info("[FLOW]   - Collect all CSV in memory")
+        logger.info("[FLOW]   - Use pd.read_csv() for high-performance processing")
+    else:
+        logger.info("[FLOW] DATA READING MODE: STREAMING (line-by-line)")
+        logger.info("[FLOW]   - Read stdout line-by-line in real-time")
+        logger.info("[FLOW]   - Low memory footprint (pandas not available)")
+
+    # Log output destination based on flags
+    logger.info("[FLOW] === OUTPUT DESTINATION ===")
+    if ENABLE_INFLUXDB_WRITE:
+        logger.info(f"[FLOW] PRIMARY OUTPUT: InfluxDB (ENABLE_INFLUXDB_WRITE=true)")
+        logger.info(f"[FLOW]   - URL: {INFLUXDB_URL}")
+        logger.info(f"[FLOW]   - Bucket: {INFLUXDB_BUCKET}")
+        logger.info(f"[FLOW]   - Batch Size: {INFLUX_BATCH_SIZE} points")
+    else:
+        logger.warning("[FLOW] InfluxDB writes DISABLED (ENABLE_INFLUXDB_WRITE=false)")
+
+    if SAVE_CSV_OUTPUT:
+        logger.info(f"[FLOW] SECONDARY OUTPUT: CSV File (SAVE_CSV_OUTPUT=true)")
+    else:
+        logger.info(f"[FLOW] CSV output disabled (SAVE_CSV_OUTPUT=false)")
+
+    logger.info("[FLOW] =========================================")
 
     # Check if proc.psinfo.sname exists in archive BEFORE starting main export
     # This allows parallel processing if the metric is available
@@ -1045,24 +1029,9 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
         logger.info("Value filtering DISABLED: all values will be exported")
 
     try:
-        logger.info(f"Connecting to InfluxDB: {INFLUXDB_URL}")
-        client = get_influx_client()
-        logger.info(f"Tags: product_type={PRODUCT_TYPE}, serialNumber={SERIAL_NUMBER}")
-        # OPTIMIZED: Tuned WriteOptions for high-throughput scenarios
-        write_options = WriteOptions(
-            batch_size=INFLUX_BATCH_SIZE,  # Large batches (200k recommended)
-            flush_interval=15_000,  # Flush every 15 seconds (reduced frequency)
-            jitter_interval=1_000,  # Reduced jitter for more predictable writes
-            retry_interval=10_000,  # Longer retry wait (10 seconds)
-            max_retries=5,  # More retries for reliability
-            max_retry_delay=60_000,  # Longer max delay (60 seconds)
-            exponential_base=2,
-            max_retry_time=300_000  # 5 minute total retry window
-        )
-        write_api = client.write_api(write_options=write_options)
-
         # Use pmrep with pre-validated metrics (all metrics have been tested and confirmed working)
-        logger.info(f"Extracting metrics using pmrep with {len(metrics)} validated metrics...")
+        logger.info("[FLOW] === STEP 1: PMREP DATA EXTRACTION ===")
+        logger.info(f"[FLOW] Extracting metrics using pmrep with {len(metrics)} validated metrics")
 
         # Build command with all validated metrics
         cmd = [
@@ -1074,7 +1043,7 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
             "--ignore-unknown"  # Skip metrics that can't be read (prevents PM_ERR_* errors)
         ] + metrics  # Add all validated metrics (already tested to work)
 
-        logger.info(f"Command: pmrep -a {archive_base} -t 1sec -o csv -U --ignore-unknown [+ {len(metrics)} metrics]")
+        logger.info(f"[FLOW] Command: pmrep -a {archive_base} -t 1sec -o csv -U --ignore-unknown [+ {len(metrics)} metrics]")
 
         # Start pmval process in parallel if proc.psinfo.sname is available
         pmval_process = None
@@ -1082,6 +1051,7 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
             pmval_process = start_proc_psinfo_sname_collection(archive_base, logger)
 
         # Redirect stderr to devnull to suppress pmrep internal timeout messages
+        logger.info("[FLOW] Starting pmrep subprocess...")
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -1089,6 +1059,7 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
             text=True,
             bufsize=1
         )
+        logger.info("[FLOW] ✓ pmrep process started (PID: {})".format(process.pid))
 
         # Read CSV output and convert to InfluxDB points
         points = []
@@ -1102,18 +1073,101 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
         csv_output_file = LOG_DIR / f"pmrep_output_{archive_base.stem}.csv"
 
         # Only create CSV file/buffer if needed
-        if USE_MEMORY_BUFFER:
+        logger.info("[FLOW] === STEP 2: CSV PROCESSING SETUP ===")
+        if PANDAS_AVAILABLE:
+            # Always use memory buffer with pandas for best performance
             csv_file = io.StringIO()
-            logger.info(f"✓ Using in-memory buffer for pandas vectorized processing (30-40% faster)")
+            logger.info(f"[FLOW] ✓ Using in-memory buffer for pandas vectorized processing")
         elif SAVE_CSV_OUTPUT:
+            # Streaming mode - write to file if requested
             csv_file = open(csv_output_file, 'w', encoding='utf-8')
-            logger.info(f"Saving pmrep CSV output to: {csv_output_file}")
+            logger.info(f"[FLOW] Saving pmrep CSV output to: {csv_output_file}")
         else:
             csv_file = None
-            logger.info(f"✓ CSV output saving disabled - optimized mode (SAVE_CSV_OUTPUT=false)")
+            logger.info(f"[FLOW] ✓ CSV output saving disabled - optimized mode (SAVE_CSV_OUTPUT=false)")
 
-        if ENABLE_STREAMING_PMREP and not (PANDAS_AVAILABLE and USE_MEMORY_BUFFER):
-            logger.info("Using streaming pmrep mode (line-by-line processing)")
+        # Initialize InfluxDB connection and write API only if needed
+        write_api = None
+        if ENABLE_INFLUXDB_WRITE:
+            logger.info("[FLOW] === STEP 3: INFLUXDB CONNECTION (WRITE ENABLED) ===")
+            logger.info(f"[FLOW] Connecting to InfluxDB: {INFLUXDB_URL}")
+            client = get_influx_client()
+            logger.info(f"[FLOW] ✓ Connected successfully")
+            logger.info(f"[FLOW] Tags: product_type={PRODUCT_TYPE}, serialNumber={SERIAL_NUMBER}")
+
+            # OPTIMIZED: Tuned WriteOptions for high-throughput scenarios
+            write_options = WriteOptions(
+                batch_size=INFLUX_BATCH_SIZE,
+                flush_interval=15_000,
+                jitter_interval=1_000,
+                retry_interval=10_000,
+                max_retries=5,
+                max_retry_delay=60_000,
+                exponential_base=2,
+                max_retry_time=300_000
+            )
+            write_api = client.write_api(write_options=write_options)
+            logger.info("[FLOW] ✓ Write API initialized with async batching")
+
+        # Choose processing mode: Pandas (fast) or Streaming (low memory)
+        if PANDAS_AVAILABLE:
+            logger.info("[FLOW] === STEP 4: PANDAS MODE (MEMORY BUFFER) ===")
+            logger.info("[FLOW] ✓ Using pandas CSV parsing with line protocol (OPTIMIZED)")
+
+            # Collect all CSV output in memory
+            logger.info("[FLOW] Collecting all CSV output into memory buffer...")
+            csv_content_lines = []
+            for line in process.stdout:
+                csv_content_lines.append(line)
+                # Only write to buffer if needed (optimization: skip when SAVE_CSV_OUTPUT=false)
+                if csv_file is not None:
+                    csv_file.write(line)
+
+            process.wait(timeout=300)
+            csv_content = ''.join(csv_content_lines)
+            logger.info(f"[FLOW] ✓ Collected {len(csv_content_lines)} lines in memory")
+
+            # Parse with pandas
+            logger.info("[FLOW] === STEP 5: PANDAS DATAFRAME PROCESSING ===")
+            df = parse_csv_with_pandas(csv_content, logger)
+
+            if df is not None:
+                # Convert to line protocol
+                logger.info("[FLOW] Converting DataFrame to InfluxDB line protocol...")
+                line_protocol_entries = dataframe_to_line_protocol(
+                    df, PRODUCT_TYPE, SERIAL_NUMBER, INFLUXDB_MEASUREMENT, logger
+                )
+
+                # Write using line protocol (30-40% faster)
+                if line_protocol_entries:
+                    logger.info(f"[FLOW] === STEP 6: INFLUXDB ASYNC WRITES (Batch={INFLUX_BATCH_SIZE}) ===")
+                    logger.info(f"[FLOW] Writing {len(line_protocol_entries)} points using line protocol...")
+                    # Write in batches
+                    for i in range(0, len(line_protocol_entries), INFLUX_BATCH_SIZE):
+                        batch = line_protocol_entries[i:i+INFLUX_BATCH_SIZE]
+                        if ENABLE_INFLUXDB_WRITE:
+                            write_api.write(bucket=INFLUXDB_BUCKET, record='\n'.join(batch))
+                        total_points_written += len(batch)
+                        batch_count += 1
+
+                        if batch_count % PROGRESS_LOG_INTERVAL == 0:
+                            status = "written" if ENABLE_INFLUXDB_WRITE else "processed (not written)"
+                            logger.info(f"[FLOW] Progress: {total_points_written} points {status} ({batch_count} batches)...")
+
+                # Flush and mark processing complete
+                if write_api:
+                    write_api.flush()
+                logger.info(f"✓ Pandas+LineProtocol: {total_points_written} points written")
+                line_count = len(csv_content_lines)
+            else:
+                # Pandas failed - this shouldn't happen but handle gracefully
+                logger.error("Pandas parsing failed unexpectedly")
+                return False, None
+
+        else:
+            # Streaming mode - line by line processing (when pandas not available)
+            logger.info("[FLOW] === STEP 4: STREAMING CSV PROCESSING ===")
+            logger.info("[FLOW] Using streaming mode (line-by-line processing)")
 
             for line in process.stdout:
                 line = line.strip()
@@ -1128,7 +1182,8 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
                 # First line is header
                 if header is None:
                     header = [col.strip().strip('"') for col in line.split(',')]
-                    logger.info(f"Found {len(header)} columns (first column is timestamp)")
+                    logger.info(f"[FLOW] Found {len(header)} columns (first column is timestamp)")
+                    logger.info(f"[FLOW] === STEP 5: POINT CREATION (CSV → InfluxDB Points) ===")
                     continue
 
                 try:
@@ -1148,6 +1203,7 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
                         continue
 
                     # Create single point with all metrics as fields
+                    # [FLOW] This is where CSV row → InfluxDB Point conversion happens
                     point = Point(INFLUXDB_MEASUREMENT) \
                         .tag("product_type", PRODUCT_TYPE) \
                         .tag("serialNumber", SERIAL_NUMBER) \
@@ -1192,11 +1248,15 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
 
                     # Write points in batches with streaming
                     if len(points) >= INFLUX_BATCH_SIZE:
-                        write_api.write(bucket=INFLUXDB_BUCKET, record=points)
+                        if batch_count == 0:
+                            logger.info(f"[FLOW] === STEP 6: INFLUXDB ASYNC WRITES (Batch={INFLUX_BATCH_SIZE}) ===")
+                        if ENABLE_INFLUXDB_WRITE:
+                            write_api.write(bucket=INFLUXDB_BUCKET, record=points)
                         total_points_written += len(points)
                         batch_count += 1
                         if batch_count % PROGRESS_LOG_INTERVAL == 0:
-                            logger.info(f"Streaming progress: {total_points_written} points written ({batch_count} batches)...")
+                            status = "written" if ENABLE_INFLUXDB_WRITE else "processed (not written)"
+                            logger.info(f"[FLOW] Streaming progress: {total_points_written} points {status} ({batch_count} batches)...")
                         points = []
 
                 except Exception as e:
@@ -1206,180 +1266,15 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
 
             process.wait(timeout=300)
             logger.info(f"✓ Streaming pmrep complete: processed {line_count} lines")
-            goto_end_processing = True
 
-        elif PANDAS_AVAILABLE and USE_MEMORY_BUFFER:
-            logger.info("✓ Using pandas CSV parsing with line protocol (OPTIMIZED - 30-40% faster)")
-
-            # Collect all CSV output in memory
-            csv_content_lines = []
-            for line in process.stdout:
-                csv_content_lines.append(line)
-                # Only write to buffer if needed (optimization: skip when SAVE_CSV_OUTPUT=false)
-                if csv_file is not None:
-                    csv_file.write(line)
-
-            process.wait(timeout=300)
-            csv_content = ''.join(csv_content_lines)
-
-            # Parse with pandas
-            df = parse_csv_with_pandas(csv_content, logger)
-
-            if df is not None:
-                # Convert to line protocol
-                line_protocol_entries = dataframe_to_line_protocol(
-                    df, PRODUCT_TYPE, SERIAL_NUMBER, INFLUXDB_MEASUREMENT, logger
-                )
-
-                # Write using line protocol (30-40% faster)
-                if line_protocol_entries:
-                    # Write in batches
-                    for i in range(0, len(line_protocol_entries), INFLUX_BATCH_SIZE):
-                        batch = line_protocol_entries[i:i+INFLUX_BATCH_SIZE]
-                        write_api.write(bucket=INFLUXDB_BUCKET, record='\n'.join(batch))
-                        total_points_written += len(batch)
-                        batch_count += 1
-
-                        if batch_count % PROGRESS_LOG_INTERVAL == 0:
-                            logger.info(f"Progress: {total_points_written} points written ({batch_count} batches)...")
-
-                # Flush and skip the line-by-line processing
-                write_api.flush()
-                logger.info(f"✓ Pandas+LineProtocol: {total_points_written} points written")
-
-                # Jump to the end of processing
-                line_count = len(csv_content_lines)
-                goto_end_processing = True
-            else:
-                # Pandas failed, fall back to standard processing
-                logger.info("Falling back to standard line-by-line CSV processing")
-                goto_end_processing = False
-        else:
-            if not PANDAS_AVAILABLE:
-                logger.info("⚠️  Using standard CSV processing (pandas not available - install for 30-40% speedup)")
-            else:
-                logger.info("Using standard CSV processing (memory buffer not enabled)")
-            goto_end_processing = False
-
-        # ============================================================
-        # STANDARD PROCESSING (fallback or if pandas not available)
-        # ============================================================
-        if not goto_end_processing:
-            logger.info("Processing pmrep output (standard line-by-line mode)...")
-
-            for line in process.stdout:
-                line = line.strip()
-                if not line:
-                    continue
-
-                # Write to CSV file only if configured (optimization: skip I/O when disabled)
-                if csv_file is not None:
-                    csv_file.write(line + '\n')
-                line_count += 1
-
-                # First line is header
-                if header is None:
-                    header = [col.strip().strip('"') for col in line.split(',')]
-                    logger.info(f"Found {len(header)} columns (first column is timestamp)")
-                    continue
-
-                try:
-                    # Parse CSV line
-                    values = line.split(',')
-                    if len(values) != len(header):
-                        continue
-
-                    # First column is timestamp
-                    timestamp_str = values[0].strip()
-
-                    # Parse timestamp (format: YYYY-MM-DD HH:MM:SS)
-                    try:
-                        ts = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-                        ts = ts.replace(tzinfo=timezone.utc)
-                    except:
-                        continue
-
-                    # Create single point with all metrics as fields
-                    point = Point(INFLUXDB_MEASUREMENT) \
-                        .tag("product_type", PRODUCT_TYPE) \
-                        .tag("serialNumber", SERIAL_NUMBER) \
-                        .time(ts)
-
-                    has_fields = False
-
-                    # Add all metrics as fields
-                    for i, metric_name in enumerate(header[1:], start=1):
-                        value_str = values[i].strip().strip('"')
-
-                        # Skip empty, None, N/A, or ? values
-                        if not value_str or value_str.lower() in ['', 'n/a', '?', 'none', 'null']:
-                            error_count += 1  # Count empty values
-                            continue
-
-                        try:
-                            # Ensure value is explicitly a float
-                            value = float(value_str)
-
-                            # Track this metric in CSV (for all valid numeric values, even zeros)
-                            save_metric_to_csv(metric_name)
-
-                            # Skip None values
-                            if value is None:
-                                error_count += 1
-                                continue
-
-                            # Apply PCP_METRICS_FILTER
-                            if PCP_METRICS_FILTER:
-                                # Check if value should be filtered
-                                if "skip_zero" in PCP_METRICS_FILTER and value == 0:
-                                    continue
-                                if "skip_empty" in PCP_METRICS_FILTER and value_str.strip() == "":
-                                    continue
-                                if "skip_none" in PCP_METRICS_FILTER and (value_str.lower() == "none" or value_str.strip() == ""):
-                                    continue
-
-                            # Add metric as field (sanitize metric name for field name)
-                            # Replace dots, dashes, and spaces with underscores
-                            field_name = metric_name.replace('.', '_').replace('-', '_').replace(' ', '_')
-
-                            # Explicitly ensure float type for InfluxDB (avoid schema conflicts)
-                            point.field(field_name, float(value))
-                            has_fields = True
-
-                        except ValueError:
-                            error_count += 1
-
-                    # Only add point if it has at least one field
-                    if has_fields:
-                        points.append(point)
-
-                    # Write points in batches (configurable size for performance)
-                    if len(points) >= INFLUX_BATCH_SIZE:
-                        write_api.write(bucket=INFLUXDB_BUCKET, record=points)
-                        total_points_written += len(points)
-                        batch_count += 1
-                        # Log progress at configurable intervals
-                        if batch_count % PROGRESS_LOG_INTERVAL == 0:
-                            logger.info(f"Progress: {total_points_written} points written ({batch_count} batches)...")
-                        points = []
-
-                except Exception as e:
-                    error_count += 1
-                    if error_count <= 5:
-                        logger.debug(f"Error processing line {line_count}: {e}")
-
-            # Wait for process to complete if standard processing was used
-            if not goto_end_processing:
-                process.wait(timeout=300)
-
-        # Close CSV file
+        # Close CSV file and save if needed
         if csv_file is not None:
-            if USE_MEMORY_BUFFER and SAVE_CSV_OUTPUT:
+            if PANDAS_AVAILABLE and SAVE_CSV_OUTPUT:
                 # Write memory buffer to disk if requested
                 with open(csv_output_file, 'w', encoding='utf-8') as f:
                     f.write(csv_file.getvalue())
                 logger.info(f"CSV output saved from memory buffer to: {csv_output_file}")
-            elif not USE_MEMORY_BUFFER and SAVE_CSV_OUTPUT:
+            elif not PANDAS_AVAILABLE and SAVE_CSV_OUTPUT:
                 csv_file.close()
                 logger.info(f"CSV output saved to: {csv_output_file}")
             else:
@@ -1389,19 +1284,25 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
 
         # Write remaining points (only for standard processing)
         if points:
-            write_api.write(bucket=INFLUXDB_BUCKET, record=points)
+            logger.info(f"[FLOW] Writing final batch of {len(points)} points...")
+            if ENABLE_INFLUXDB_WRITE:
+                write_api.write(bucket=INFLUXDB_BUCKET, record=points)
             total_points_written += len(points)
-            logger.info(f"Writing final batch of {len(points)} points to InfluxDB...")
+            status = "Written" if ENABLE_INFLUXDB_WRITE else "Processed (not written)"
+            logger.info(f"[FLOW] {status} final batch of {len(points)} points")
 
-        # Flush async writes and wait for completion
-        logger.info("Flushing async writes to InfluxDB...")
-        write_api.flush()
-        logger.info("All async writes completed")
+        # Flush async writes and wait for completion (only if InfluxDB write is enabled)
+        if write_api:
+            logger.info("[FLOW] === STEP 7: FLUSHING ASYNC WRITES ===")
+            logger.info("[FLOW] Flushing async writes to InfluxDB...")
+            write_api.flush()
+            logger.info("[FLOW] ✓ All async writes completed")
 
-        logger.info(f"===== EXPORT COMPLETE =====")
-        logger.info(f"Total data points written: {total_points_written}")
-        logger.info(f"Processed {line_count} lines from pmrep")
-        logger.info(f"Empty/invalid values skipped: {error_count}")
+        logger.info(f"[FLOW] ===== EXPORT COMPLETE =====")
+        status_msg = "written" if ENABLE_INFLUXDB_WRITE else "processed (NOT written)"
+        logger.info(f"[FLOW] Total data points {status_msg}: {total_points_written}")
+        logger.info(f"[FLOW] Processed {line_count} lines from pmrep")
+        logger.info(f"[FLOW] Empty/invalid values skipped: {error_count}")
 
         # Parse and export proc.psinfo.sname data
         # The pmrep process was started in parallel earlier, now we collect its results
@@ -1416,6 +1317,20 @@ def export_to_influxdb(archive_base: Path, logger, metrics: List[str]) -> tuple[
 
         # Don't close pooled client
         # client.close()
+
+        # Export to S3 Parquet if enabled
+        if S3_EXPORT_AVAILABLE and ENABLE_S3_EXPORT and csv_output_file.exists():
+            logger.info("[FLOW] === STEP 8: S3 PARQUET EXPORT ===")
+            try:
+                export_success = export_to_s3_parquet(csv_output_file, PRODUCT_TYPE, SERIAL_NUMBER, logger)
+                if export_success:
+                    logger.info("[FLOW] ✓ S3 Parquet export successful")
+                else:
+                    logger.warning("[FLOW] ⚠️  S3 Parquet export failed (non-critical)")
+            except Exception as e:
+                logger.error(f"[FLOW] ✗ S3 Parquet export error: {e}", exc_info=True)
+        elif ENABLE_S3_EXPORT and not S3_EXPORT_AVAILABLE:
+            logger.warning("[FLOW] S3 export enabled but s3_parquet_exporter module not available")
 
         # Return success and CSV file path (if saved)
         csv_path = csv_output_file if SAVE_CSV_OUTPUT and csv_output_file.exists() else None
@@ -1440,7 +1355,9 @@ def process_archive(archive_path: Path, logger) -> bool:
     extract_path = EXTRACT_DIR / archive_path.stem
 
     log_separator(logger, f"Processing archive: {archive_name}")
-    logger.info(f"START: Processing {archive_name}")
+    logger.info(f"[FLOW] ========================================")
+    logger.info(f"[FLOW] START: Processing {archive_name}")
+    logger.info(f"[FLOW] ========================================")
 
     # Start timing the entire archive processing
     start_time_total = time.time()
@@ -1449,29 +1366,31 @@ def process_archive(archive_path: Path, logger) -> bool:
         # Create extraction directory
         extract_path.mkdir(parents=True, exist_ok=True)
 
-        logger.info("Extracting archive...")
-        extract_duration = extract_archive_fast(archive_path, extract_path, logger)
-        logger.info(f"Extracted in {extract_duration:.2f}s")
+        logger.info("[FLOW] === PHASE 1: ARCHIVE EXTRACTION ===")
+        logger.info("[FLOW] Extracting .tar.xz archive...")
+        extract_duration = extract_archive(archive_path, extract_path, logger)
+        logger.info(f"[FLOW] ✓ Extracted in {extract_duration:.2f}s")
 
         # Find the PCP archive (look for .meta file)
         meta_files = list(extract_path.rglob("*.meta"))
 
         if not meta_files:
-            logger.error(f"No PCP archive found in {archive_name}")
+            logger.error(f"[FLOW] ✗ No PCP archive found in {archive_name}")
             shutil.move(str(archive_path), str(FAILED_DIR / archive_name))
-            logger.info(f"Moved to failed directory: {archive_name}")
+            logger.info(f"[FLOW] Moved to failed directory: {archive_name}")
             return False
 
         # Get archive base path (remove .meta extension)
         archive_base = Path(str(meta_files[0])[:-5])  # Remove .meta
-        logger.info(f"Found PCP archive: {archive_base}")
+        logger.info(f"[FLOW] ✓ Found PCP archive: {archive_base}")
 
         # Get available metrics
-        logger.info(f"Starting metric validation...")
+        logger.info(f"[FLOW] === PHASE 2: METRIC VALIDATION ===")
+        logger.info(f"[FLOW] Starting metric validation...")
         start_time_validation = time.time()
         metrics = get_available_metrics(archive_base, logger)
         validation_duration = time.time() - start_time_validation
-        logger.info(f"Metric validation completed in {validation_duration:.2f} seconds")
+        logger.info(f"[FLOW] ✓ Metric validation completed in {validation_duration:.2f} seconds")
 
         if not metrics:
             logger.warning("No metrics found in archive")
@@ -1483,14 +1402,15 @@ def process_archive(archive_path: Path, logger) -> bool:
         # get_metric_values(archive_base, metrics, logger)
 
         # Check InfluxDB connectivity
+        logger.info(f"[FLOW] === PHASE 3: DATA EXPORT ===")
         check_influxdb_connection(logger)
 
         # Export to InfluxDB (pass discovered metrics)
-        logger.info(f"Starting InfluxDB export...")
+        logger.info(f"[FLOW] Starting data export to InfluxDB...")
         start_time_export = time.time()
         success, csv_file_path = export_to_influxdb(archive_base, logger, metrics)
         export_duration = time.time() - start_time_export
-        logger.info(f"InfluxDB export completed in {export_duration:.2f} seconds")
+        logger.info(f"[FLOW] ✓ Data export completed in {export_duration:.2f} seconds")
 
         # Calculate total processing time
         total_duration = time.time() - start_time_total
