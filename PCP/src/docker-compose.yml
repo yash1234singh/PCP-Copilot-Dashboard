@@ -119,13 +119,13 @@ services:
       - ENABLE_SWAP_METRICS=false
       - ENABLE_NFS_METRICS=false
       # Output configuration
-      - SAVE_CSV_OUTPUT=false              # Save CSV files for debugging (pandas uses memory buffer automatically)
+      - SAVE_CSV_OUTPUT=true              # Save CSV files for debugging (pandas uses memory buffer automatically)
       - ENABLE_INFLUXDB_WRITE=true        # Enable/disable InfluxDB writes (useful for testing)
       - ENABLE_SNAME_PROCESSING=true  # Enable/disable proc.psinfo.sname (causes timeouts)
       # S3 Parquet export configuration
-      - ENABLE_S3_EXPORT=false                 # Set to 'true' to enable S3 Parquet export
+      - ENABLE_S3_EXPORT=true                 # Set to 'true' to enable S3 Parquet export
       - S3_BUCKET_NAME=fst-pcp-data1              # Bucket name (NOT ARN) - change to your bucket name
-      - S3_KEY_PREFIX=""                            # Directory prefix in bucket (empty = root, e.g., "metrics/prod/")
+      - S3_KEY_PREFIX=metrics/pcp/                # Directory prefix in bucket (empty = root, e.g., "metrics/prod/")
       - AWS_REGION=us-west-2                      # AWS region where bucket is located
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}  # AWS credentials from .env file
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}  # AWS credentials from .env file

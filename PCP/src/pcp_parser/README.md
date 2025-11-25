@@ -419,10 +419,207 @@ pcp_parser/
 ## AWS S3 Parquet Export
 
 Export PCP metrics to AWS S3 in Parquet format with automatic partitioning for efficient querying.
+Create a user in IAM role 
+
+
+![alt text](image.png)
+Update the .env file with 
+AWS_ACCESS_KEY_ID=AK****************2
+AWS_SECRET_ACCESS_KEY=hD***********************************GH
+
+
+or Prefer (limited IAM policy):
+
+Complete IAM Policy (JSON)
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "S3ParquetDataReadWrite",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:ListBucketVersions"
+      ],
+      "Resource": [
+        "arn:aws:s3:::fst-pcp-data1",
+        "arn:aws:s3:::fst-pcp-data1/*"
+      ]
+    },
+    {
+      "Sid": "AthenaQueryExecution",
+      "Effect": "Allow",
+      "Action": [
+        "athena:StartQueryExecution",
+        "athena:GetQueryExecution",
+        "athena:GetQueryResults",
+        "athena:StopQueryExecution",
+        "athena:GetWorkGroup",
+        "athena:ListQueryExecutions",
+        "athena:BatchGetQueryExecution"
+      ],
+      "Resource": [
+        "arn:aws:athena:us-west-2:*:workgroup/primary",
+        "arn:aws:athena:us-west-2:*:workgroup/*"
+      ]
+    },
+    {
+      "Sid": "GlueCatalogDatabaseOperations",
+      "Effect": "Allow",
+      "Action": [
+        "glue:CreateDatabase",
+        "glue:GetDatabase",
+        "glue:UpdateDatabase",
+        "glue:DeleteDatabase",
+        "glue:GetDatabases"
+      ],
+      "Resource": [
+        "arn:aws:glue:us-west-2:*:catalog",
+        "arn:aws:glue:us-west-2:*:database/fst_pcp_data"
+      ]
+    },
+    {
+      "Sid": "GlueCatalogTableOperations",
+      "Effect": "Allow",
+      "Action": [
+        "glue:CreateTable",
+        "glue:GetTable",
+        "glue:UpdateTable",
+        "glue:DeleteTable",
+        "glue:GetTables",
+        "glue:BatchCreatePartition",
+        "glue:CreatePartition",
+        "glue:GetPartition",
+        "glue:GetPartitions",
+        "glue:UpdatePartition",
+        "glue:DeletePartition",
+        "glue:BatchDeletePartition",
+        "glue:BatchGetPartition"
+      ],
+      "Resource": [
+        "arn:aws:glue:us-west-2:*:catalog",
+        "arn:aws:glue:us-west-2:*:database/fst_pcp_data",
+        "arn:aws:glue:us-west-2:*:table/fst_pcp_data/*"
+      ]
+    },
+    {
+      "Sid": "AthenaQueryResultsReadWrite",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:ListBucket",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::fst-pcp-data1/athena-results",
+        "arn:aws:s3:::fst-pcp-data1/athena-results/*"
+      ]
+    }
+  ]
+}
+
+
+
+Policy Breakdown by Use Case
+
+
+1. S3 Parquet Write Operations (Statement 1)
+Allows your application to write Parquet files to S3 with the new partitioning scheme: Permissions:
+s3:PutObject - Upload Parquet files
+s3:GetObject - Read uploaded files (for verification)
+s3:DeleteObject - Delete old/test files
+s3:ListBucket - List objects in bucket
+s3:GetBucketLocation - Get bucket region
+s3:ListBucketVersions - List object versions (if versioning enabled)
+Resources:
+arn:aws:s3:::fst-pcp-data1 - Bucket-level operations
+arn:aws:s3:::fst-pcp-data1/* - Object-level operations
+Writes to:
+s3://fst-pcp-data1/
+└── product_type=ERIC_TEST/
+    └── serial_number=4311/
+        └── year=2025/month=11/day=25/hour=14/
+            └── data_20251125_143045.parquet
+2. Athena Query Execution (Statement 2)
+Allows running SQL queries via Athena: Permissions:
+athena:StartQueryExecution - Start queries (SELECT, CREATE, MSCK REPAIR)
+athena:GetQueryExecution - Get query status
+athena:GetQueryResults - Retrieve query results
+athena:StopQueryExecution - Cancel running queries
+athena:GetWorkGroup - Access workgroup settings
+athena:ListQueryExecutions - List query history
+athena:BatchGetQueryExecution - Get multiple query statuses
+Resources:
+Workgroup: primary (default Athena workgroup)
+Can be changed to specific workgroup ARN if needed
+3. Glue Catalog - Database Operations (Statement 3)
+Allows creating and managing Athena databases: Permissions:
+glue:CreateDatabase - Create database (e.g., fst_pcp_data)
+glue:GetDatabase - Read database metadata
+glue:UpdateDatabase - Modify database properties
+glue:DeleteDatabase - Delete database (if needed)
+glue:GetDatabases - List all databases
+Resources:
+arn:aws:glue:us-west-2:*:catalog - Glue catalog access
+arn:aws:glue:us-west-2:*:database/fst_pcp_data - Specific database
+Used for:
+CREATE DATABASE IF NOT EXISTS fst_pcp_data
+LOCATION 's3://fst-pcp-data1/metrics/pcp/';
+4. Glue Catalog - Table & Partition Operations (Statement 4)
+Allows creating tables and managing partitions (MSCK REPAIR): Permissions:
+glue:CreateTable - Create Athena external table
+glue:GetTable - Read table metadata
+glue:UpdateTable - Modify table schema
+glue:DeleteTable - Drop tables
+glue:GetTables - List tables in database
+glue:BatchCreatePartition - MSCK REPAIR TABLE (auto-discover partitions)
+glue:CreatePartition - Add single partition
+glue:GetPartition - Read partition metadata
+glue:GetPartitions - List all partitions
+glue:UpdatePartition - Modify partition metadata
+glue:DeletePartition - Remove partition
+glue:BatchDeletePartition - Remove multiple partitions
+glue:BatchGetPartition - Get multiple partition details
+Resources:
+Catalog and database (same as above)
+arn:aws:glue:us-west-2:*:table/fst_pcp_data/* - All tables in database
+Used for:
+-- Create table with new partitioning scheme
+CREATE EXTERNAL TABLE fst_pcp_data_table (...)
+PARTITIONED BY (
+    product_type string,
+    serial_number string,
+    year string,
+    month string,
+    day string,
+    hour string
+)
+LOCATION 's3://fst-pcp-data1/metrics/pcp/';
+
+-- Auto-discover partitions
+MSCK REPAIR TABLE fst_pcp_data_table;
+
+-- Show discovered partitions
+SHOW PARTITIONS fst_pcp_data_table;
+5. Athena Query Results Storage (Statement 5)
+Athena stores query results in S3 - requires separate permissions: Permissions:
+s3:PutObject - Write query results
+s3:GetObject - Read query results
+s3:ListBucket - List result files
+s3:DeleteObject - Clean up old results
+Resources:
+arn:aws:s3:::fst-pcp-data1/athena-results - Query results folder
+arn:aws:s3:::fst-pcp-data1/athena-results/* - Result files
+
 
 ### Features
 
-✅ Automatic partitioning by date (year/month/day/hour), product_type, serial_number
+✅ Automatic partitioning by product_type, serial_number, date (year/month/day/hour)
 ✅ Columnar Parquet format (5-10x smaller than CSV)
 ✅ Multiple compression options (snappy, gzip, brotli, lz4, zstd)
 ✅ AWS Athena compatible (query with SQL)
@@ -541,8 +738,8 @@ The `test_s3_write.py` script provides comprehensive testing:
 - **Checks**: DataFrame creation, Parquet conversion, Hive-style partitioning, S3 upload
 - **Creates**: Test Parquet file at path like:
   ```
-  s3://fst-pcp-data1/test/year=2025/month=11/day=19/hour=01/
-    product_type=SW_DEV_11/serial_number=1235678/test_20251119_014640.parquet
+  s3://fst-pcp-data1/test/product_type=SW_DEV_11/serial_number=1235678/
+    year=2025/month=11/day=19/hour=01/test_20251119_014640.parquet
   ```
 
 #### Test 5: List Files Verification
@@ -590,9 +787,9 @@ s3://fst-pcp-data1/
 └── test/
     ├── test.txt                              # Simple text file
     ├── test_YYYYMMDD_HHMMSS.txt             # Timestamped text file
-    └── year=2025/month=11/day=19/hour=01/
-        └── product_type=SW_DEV_11/
-            └── serial_number=1235678/
+    └── product_type=SW_DEV_11/
+        └── serial_number=1235678/
+            └── year=2025/month=11/day=19/hour=01/
                 └── test_YYYYMMDD_HHMMSS.parquet
 ```
 
@@ -617,7 +814,7 @@ aws s3 rm s3://fst-pcp-data1/test/ --recursive
 
 ```
 s3://your-bucket/time-series-data/
-└── year=2025/month=11/day=13/hour=14/product_type=SERVER1/serial_number=1234/
+└── product_type=SERVER1/serial_number=1234/year=2025/month=11/day=13/hour=14/
     └── data_20251113_143045.parquet
 ```
 
@@ -629,15 +826,15 @@ CREATE EXTERNAL TABLE pcp_metrics (
     kernel_all_cpu_idle DOUBLE,
     mem_util_used DOUBLE
 )
-PARTITIONED BY (year, month, day, hour, product_type, serial_number)
+PARTITIONED BY (product_type, serial_number, year, month, day, hour)
 STORED AS PARQUET
 LOCATION 's3://your-bucket/time-series-data/';
 
 MSCK REPAIR TABLE pcp_metrics;
 
 SELECT * FROM pcp_metrics
-WHERE year='2025' AND month='11' AND day='13'
-  AND product_type='SERVER1' LIMIT 100;
+WHERE product_type='SERVER1' AND serial_number='1234'
+  AND year='2025' AND month='11' AND day='13' LIMIT 100;
 ```
 
 ### Performance

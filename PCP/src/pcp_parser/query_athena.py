@@ -51,14 +51,14 @@ S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME', 'fst-pcp-data1')
 S3_KEY_PREFIX = os.getenv('S3_KEY_PREFIX', '')  # Empty = bucket root
 
 # Athena Configuration
-ATHENA_DATABASE = 'pcp_metrics_db'
-ATHENA_TABLE = 'pcp_metrics'
-ATHENA_OUTPUT_BUCKET = S3_BUCKET_NAME  # Use same bucket for query results
-ATHENA_OUTPUT_PREFIX = 'athena-results/'
+ATHENA_DATABASE = 'fst_pcp_data'
+ATHENA_TABLE = 'fst_pcp_data_table'
+ATHENA_OUTPUT_LOCATION = 's3://fst-pcp-data1/athena-results/'  # Query results location
+S3_DATA_LOCATION = 's3://fst-pcp-data1/metrics/pcp/'
 
-# Query Filters - CUSTOMIZE THESE
-PRODUCT_TYPE = os.getenv('PRODUCT_TYPE', 'SW_DEV_11')
-SERIAL_NUMBER = os.getenv('SERIAL_NUMBER', '1235678')
+# Query Filters - FILL THESE based on current sample data
+PRODUCT_TYPE = os.getenv('PRODUCT_TYPE', 'ERIC_TEST')
+SERIAL_NUMBER = os.getenv('SERIAL_NUMBER', '4311')
 
 # Default time range (last 7 days)
 DEFAULT_START_TIME = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
@@ -459,16 +459,38 @@ class AthenaQueryExecutor:
         self.table = ATHENA_TABLE
         self.bucket = S3_BUCKET_NAME
         self.key_prefix = S3_KEY_PREFIX
-        self.output_location = f's3://{ATHENA_OUTPUT_BUCKET}/{ATHENA_OUTPUT_PREFIX}'
+        self.output_location = ATHENA_OUTPUT_LOCATION
+
+    def delete_database_if_exists(self):
+        """Delete database if it exists (Step 1)"""
+        print(f"🗑️  Checking if database '{self.database}' exists...")
+
+        try:
+            # Check if database exists
+            self.glue_client.get_database(Name=self.database)
+            print(f"⚠️  Database '{self.database}' exists, deleting...")
+
+            # Delete database (cascade deletes tables)
+            query = f"DROP DATABASE IF EXISTS {self.database} CASCADE"
+            query_id = self._execute_query(query)
+            self._wait_for_query(query_id)
+            print(f"✓ Database '{self.database}' deleted")
+            return True
+        except self.glue_client.exceptions.EntityNotFoundException:
+            print(f"✓ Database '{self.database}' does not exist (OK)")
+            return True
+        except Exception as e:
+            print(f"⚠️  Warning during database check: {e}")
+            return True
 
     def create_database(self):
-        """Create Athena database if it doesn't exist"""
+        """Create Athena database (Step 1)"""
         print(f"📁 Creating database: {self.database}")
 
         query = f"""
         CREATE DATABASE IF NOT EXISTS {self.database}
-        COMMENT 'PCP Metrics Database'
-        LOCATION 's3://{self.bucket}/{self.key_prefix}'
+        COMMENT 'FST PCP Metrics Database'
+        LOCATION '{S3_DATA_LOCATION}'
         """
 
         try:
@@ -480,56 +502,441 @@ class AthenaQueryExecutor:
             print(f"✗ Failed to create database: {e}")
             return False
 
+    def delete_table_if_exists(self):
+        """Delete table if it exists (Step 2)"""
+        print(f"🗑️  Checking if table '{self.table}' exists...")
+
+        try:
+            # Check if table exists
+            self.glue_client.get_table(DatabaseName=self.database, Name=self.table)
+            print(f"⚠️  Table '{self.table}' exists, deleting...")
+
+            # Delete table
+            query = f"DROP TABLE IF EXISTS {self.database}.{self.table}"
+            query_id = self._execute_query(query)
+            self._wait_for_query(query_id)
+            print(f"✓ Table '{self.table}' deleted")
+            return True
+        except self.glue_client.exceptions.EntityNotFoundException:
+            print(f"✓ Table '{self.table}' does not exist (OK)")
+            return True
+        except Exception as e:
+            print(f"⚠️  Warning during table check: {e}")
+            return True
+
     def create_table(self):
-        """Create Athena table for PCP metrics if it doesn't exist"""
+        """Create Athena table for PCP metrics (Step 2)"""
         print(f"📊 Creating table: {self.table}")
 
-        # Construct S3 location
-        if self.key_prefix:
-            s3_location = f's3://{self.bucket}/{self.key_prefix}'
-        else:
-            s3_location = f's3://{self.bucket}/'
-
+        # Use the full schema with all 395+ columns
         query = f"""
         CREATE EXTERNAL TABLE IF NOT EXISTS {self.database}.{self.table} (
-            timestamp TIMESTAMP,
-            kernel_all_cpu_idle DOUBLE,
-            kernel_all_cpu_user DOUBLE,
-            kernel_all_cpu_sys DOUBLE,
-            kernel_all_cpu_nice DOUBLE,
-            kernel_all_cpu_wait_total DOUBLE,
-            kernel_all_cpu_irq_hard DOUBLE,
-            kernel_all_cpu_irq_soft DOUBLE,
-            kernel_all_cpu_steal DOUBLE,
-            kernel_all_cpu_guest DOUBLE,
-            mem_util_used DOUBLE,
-            mem_util_free DOUBLE,
-            mem_util_cached DOUBLE,
-            mem_util_buffers DOUBLE,
-            mem_util_shared DOUBLE,
-            mem_util_available DOUBLE,
-            disk_dev_read DOUBLE,
-            disk_dev_write DOUBLE,
-            disk_dev_read_bytes DOUBLE,
-            disk_dev_write_bytes DOUBLE,
-            network_interface_in_bytes DOUBLE,
-            network_interface_out_bytes DOUBLE,
-            network_interface_in_packets DOUBLE,
-            network_interface_out_packets DOUBLE,
-            network_interface_in_errors DOUBLE,
-            network_interface_out_errors DOUBLE
+            `timestamp` bigint,
+            `hinv.ncpu` double,
+            `hinv.physmem` double,
+            `hinv.pagesize` double,
+            `hinv.ndisk` double,
+            `hinv.cpu.model_name-cpu0` string,
+            `hinv.cpu.model_name-cpu1` string,
+            `hinv.cpu.model_name-cpu2` string,
+            `hinv.cpu.model_name-cpu3` string,
+            `hinv.cpu.model_name-cpu4` string,
+            `hinv.cpu.model_name-cpu5` string,
+            `hinv.cpu.model_name-cpu6` string,
+            `hinv.cpu.model_name-cpu7` string,
+            `hinv.cpu.clock-cpu0` double,
+            `hinv.cpu.clock-cpu1` double,
+            `hinv.cpu.clock-cpu2` double,
+            `hinv.cpu.clock-cpu3` double,
+            `hinv.cpu.clock-cpu4` double,
+            `hinv.cpu.clock-cpu5` double,
+            `hinv.cpu.clock-cpu6` double,
+            `hinv.cpu.clock-cpu7` double,
+            `kernel.uname.release` string,
+            `kernel.uname.nodename` string,
+            `kernel.uname.distro` string,
+            `kernel.all.uptime` double,
+            `kernel.all.cpu.user` double,
+            `kernel.all.cpu.sys` double,
+            `kernel.all.cpu.idle` double,
+            `kernel.all.cpu.wait.total` double,
+            `kernel.all.cpu.steal` double,
+            `kernel.all.cpu.irq.soft` double,
+            `kernel.all.cpu.irq.hard` double,
+            `kernel.all.load-1 minute` double,
+            `kernel.all.load-5 minute` double,
+            `kernel.all.load-15 minute` double,
+            `kernel.all.running` double,
+            `kernel.all.blocked` double,
+            `kernel.all.pswitch` double,
+            `kernel.all.intr` double,
+            `kernel.cpu.util.user` double,
+            `kernel.cpu.util.sys` double,
+            `kernel.cpu.util.idle` double,
+            `mem.physmem` double,
+            `mem.freemem` double,
+            `mem.util.used` double,
+            `mem.util.free` double,
+            `mem.util.cached` double,
+            `mem.util.bufmem` double,
+            `mem.util.active` double,
+            `mem.util.inactive` double,
+            `mem.util.swaptotal` double,
+            `mem.util.swapfree` double,
+            `mem.util.swapcached` double,
+            `mem.util.dirty` double,
+            `mem.util.slab` double,
+            `mem.util.available` double,
+            `mem.vmstat.pgpgin` double,
+            `mem.vmstat.pgpgout` double,
+            `mem.vmstat.pswpin` double,
+            `mem.vmstat.pswpout` double,
+            `mem.vmstat.pgfault` double,
+            `mem.vmstat.pgmajfault` double,
+            `disk.all.read` double,
+            `disk.all.write` double,
+            `disk.all.total` double,
+            `disk.all.read_bytes` double,
+            `disk.all.write_bytes` double,
+            `disk.all.total_bytes` double,
+            `disk.dev.read-sda` double,
+            `disk.dev.read-sdb` double,
+            `disk.dev.write-sda` double,
+            `disk.dev.write-sdb` double,
+            `disk.dev.read_bytes-sda` double,
+            `disk.dev.read_bytes-sdb` double,
+            `disk.dev.write_bytes-sda` double,
+            `disk.dev.write_bytes-sdb` double,
+            `disk.dev.avactive-sda` double,
+            `disk.dev.avactive-sdb` double,
+            `disk.dev.await-sda` double,
+            `disk.dev.await-sdb` double,
+            `disk.dev.util-sda` double,
+            `disk.dev.util-sdb` double,
+            `disk.dev.avg_qlen-sda` double,
+            `disk.dev.avg_qlen-sdb` double,
+            `disk.dev.avg_rqsz-sda` double,
+            `disk.dev.avg_rqsz-sdb` double,
+            `filesys.capacity-/dev/root` double,
+            `filesys.capacity-/dev/sda1` double,
+            `filesys.capacity-/dev/mapper/vg_jaguar-var` double,
+            `filesys.capacity-/dev/mapper/vg_jaguar-log` double,
+            `filesys.capacity-/dev/mapper/vg_jaguar-den.vision` double,
+            `filesys.full-/dev/root` double,
+            `filesys.full-/dev/sda1` double,
+            `filesys.full-/dev/mapper/vg_jaguar-var` double,
+            `filesys.full-/dev/mapper/vg_jaguar-log` double,
+            `filesys.full-/dev/mapper/vg_jaguar-den.vision` double,
+            `vfs.files.count` double,
+            `network.interface.in.bytes-lo` double,
+            `network.interface.in.bytes-eth0` double,
+            `network.interface.in.bytes-vlan100` double,
+            `network.interface.in.bytes-int-maint` double,
+            `network.interface.in.bytes-vlan-bear-gogo` double,
+            `network.interface.in.bytes-bear-gogo` double,
+            `network.interface.in.bytes-wlan0` double,
+            `network.interface.in.bytes-wlan1` double,
+            `network.interface.in.bytes-vlan102` double,
+            `network.interface.in.bytes-vlan103` double,
+            `network.interface.in.bytes-int-cabin` double,
+            `network.interface.in.bytes-int-reserved` double,
+            `network.interface.in.bytes-vlan104` double,
+            `network.interface.in.bytes-vlan110` double,
+            `network.interface.in.bytes-tunl0` double,
+            `network.interface.in.bytes-e_portal-eth0` double,
+            `network.interface.in.bytes-maint-eth0` double,
+            `network.interface.in.bytes-pbx-eth0` double,
+            `network.interface.in.bytes-vision-eth0` double,
+            `network.interface.in.bytes-isionapi-eth0` double,
+            `network.interface.in.bytes-fp3d-eth0` double,
+            `network.interface.in.bytes-visiondl-eth0` double,
+            `network.interface.in.bytes-drm-eth0` double,
+            `network.interface.in.bytes-gamp-eth0` double,
+            `network.interface.in.bytes-gamp-eth1` double,
+            `network.interface.in.bytes-gamp-eth2` double,
+            `network.interface.in.bytes-isionrss-eth0` double,
+            `network.interface.out.bytes-lo` double,
+            `network.interface.out.bytes-eth0` double,
+            `network.interface.out.bytes-vlan100` double,
+            `network.interface.out.bytes-int-maint` double,
+            `network.interface.out.bytes-vlan-bear-gogo` double,
+            `network.interface.out.bytes-bear-gogo` double,
+            `network.interface.out.bytes-wlan0` double,
+            `network.interface.out.bytes-wlan1` double,
+            `network.interface.out.bytes-vlan102` double,
+            `network.interface.out.bytes-vlan103` double,
+            `network.interface.out.bytes-int-cabin` double,
+            `network.interface.out.bytes-int-reserved` double,
+            `network.interface.out.bytes-vlan104` double,
+            `network.interface.out.bytes-vlan110` double,
+            `network.interface.out.bytes-tunl0` double,
+            `network.interface.out.bytes-e_portal-eth0` double,
+            `network.interface.out.bytes-maint-eth0` double,
+            `network.interface.out.bytes-pbx-eth0` double,
+            `network.interface.out.bytes-vision-eth0` double,
+            `network.interface.out.bytes-isionapi-eth0` double,
+            `network.interface.out.bytes-fp3d-eth0` double,
+            `network.interface.out.bytes-visiondl-eth0` double,
+            `network.interface.out.bytes-drm-eth0` double,
+            `network.interface.out.bytes-gamp-eth0` double,
+            `network.interface.out.bytes-gamp-eth1` double,
+            `network.interface.out.bytes-gamp-eth2` double,
+            `network.interface.out.bytes-isionrss-eth0` double,
+            `network.interface.total.bytes-lo` double,
+            `network.interface.total.bytes-eth0` double,
+            `network.interface.total.bytes-vlan100` double,
+            `network.interface.total.bytes-int-maint` double,
+            `network.interface.total.bytes-vlan-bear-gogo` double,
+            `network.interface.total.bytes-bear-gogo` double,
+            `network.interface.total.bytes-wlan0` double,
+            `network.interface.total.bytes-wlan1` double,
+            `network.interface.total.bytes-vlan102` double,
+            `network.interface.total.bytes-vlan103` double,
+            `network.interface.total.bytes-int-cabin` double,
+            `network.interface.total.bytes-int-reserved` double,
+            `network.interface.total.bytes-vlan104` double,
+            `network.interface.total.bytes-vlan110` double,
+            `network.interface.total.bytes-tunl0` double,
+            `network.interface.total.bytes-e_portal-eth0` double,
+            `network.interface.total.bytes-maint-eth0` double,
+            `network.interface.total.bytes-pbx-eth0` double,
+            `network.interface.total.bytes-vision-eth0` double,
+            `network.interface.total.bytes-isionapi-eth0` double,
+            `network.interface.total.bytes-fp3d-eth0` double,
+            `network.interface.total.bytes-visiondl-eth0` double,
+            `network.interface.total.bytes-drm-eth0` double,
+            `network.interface.total.bytes-gamp-eth0` double,
+            `network.interface.total.bytes-gamp-eth1` double,
+            `network.interface.total.bytes-gamp-eth2` double,
+            `network.interface.total.bytes-isionrss-eth0` double,
+            `network.interface.in.packets-lo` double,
+            `network.interface.in.packets-eth0` double,
+            `network.interface.in.packets-vlan100` double,
+            `network.interface.in.packets-int-maint` double,
+            `network.interface.in.packets-vlan-bear-gogo` double,
+            `network.interface.in.packets-bear-gogo` double,
+            `network.interface.in.packets-wlan0` double,
+            `network.interface.in.packets-wlan1` double,
+            `network.interface.in.packets-vlan102` double,
+            `network.interface.in.packets-vlan103` double,
+            `network.interface.in.packets-int-cabin` double,
+            `network.interface.in.packets-int-reserved` double,
+            `network.interface.in.packets-vlan104` double,
+            `network.interface.in.packets-vlan110` double,
+            `network.interface.in.packets-tunl0` double,
+            `network.interface.in.packets-e_portal-eth0` double,
+            `network.interface.in.packets-maint-eth0` double,
+            `network.interface.in.packets-pbx-eth0` double,
+            `network.interface.in.packets-vision-eth0` double,
+            `network.interface.in.packets-isionapi-eth0` double,
+            `network.interface.in.packets-fp3d-eth0` double,
+            `network.interface.in.packets-visiondl-eth0` double,
+            `network.interface.in.packets-drm-eth0` double,
+            `network.interface.in.packets-gamp-eth0` double,
+            `network.interface.in.packets-gamp-eth1` double,
+            `network.interface.in.packets-gamp-eth2` double,
+            `network.interface.in.packets-isionrss-eth0` double,
+            `network.interface.out.packets-lo` double,
+            `network.interface.out.packets-eth0` double,
+            `network.interface.out.packets-vlan100` double,
+            `network.interface.out.packets-int-maint` double,
+            `network.interface.out.packets-vlan-bear-gogo` double,
+            `network.interface.out.packets-bear-gogo` double,
+            `network.interface.out.packets-wlan0` double,
+            `network.interface.out.packets-wlan1` double,
+            `network.interface.out.packets-vlan102` double,
+            `network.interface.out.packets-vlan103` double,
+            `network.interface.out.packets-int-cabin` double,
+            `network.interface.out.packets-int-reserved` double,
+            `network.interface.out.packets-vlan104` double,
+            `network.interface.out.packets-vlan110` double,
+            `network.interface.out.packets-tunl0` double,
+            `network.interface.out.packets-e_portal-eth0` double,
+            `network.interface.out.packets-maint-eth0` double,
+            `network.interface.out.packets-pbx-eth0` double,
+            `network.interface.out.packets-vision-eth0` double,
+            `network.interface.out.packets-isionapi-eth0` double,
+            `network.interface.out.packets-fp3d-eth0` double,
+            `network.interface.out.packets-visiondl-eth0` double,
+            `network.interface.out.packets-drm-eth0` double,
+            `network.interface.out.packets-gamp-eth0` double,
+            `network.interface.out.packets-gamp-eth1` double,
+            `network.interface.out.packets-gamp-eth2` double,
+            `network.interface.out.packets-isionrss-eth0` double,
+            `network.interface.in.errors-lo` double,
+            `network.interface.in.errors-eth0` double,
+            `network.interface.in.errors-vlan100` double,
+            `network.interface.in.errors-int-maint` double,
+            `network.interface.in.errors-vlan-bear-gogo` double,
+            `network.interface.in.errors-bear-gogo` double,
+            `network.interface.in.errors-wlan0` double,
+            `network.interface.in.errors-wlan1` double,
+            `network.interface.in.errors-vlan102` double,
+            `network.interface.in.errors-vlan103` double,
+            `network.interface.in.errors-int-cabin` double,
+            `network.interface.in.errors-int-reserved` double,
+            `network.interface.in.errors-vlan104` double,
+            `network.interface.in.errors-vlan110` double,
+            `network.interface.in.errors-tunl0` double,
+            `network.interface.in.errors-e_portal-eth0` double,
+            `network.interface.in.errors-maint-eth0` double,
+            `network.interface.in.errors-pbx-eth0` double,
+            `network.interface.in.errors-vision-eth0` double,
+            `network.interface.in.errors-isionapi-eth0` double,
+            `network.interface.in.errors-fp3d-eth0` double,
+            `network.interface.in.errors-visiondl-eth0` double,
+            `network.interface.in.errors-drm-eth0` double,
+            `network.interface.in.errors-gamp-eth0` double,
+            `network.interface.in.errors-gamp-eth1` double,
+            `network.interface.in.errors-gamp-eth2` double,
+            `network.interface.in.errors-isionrss-eth0` double,
+            `network.interface.out.errors-lo` double,
+            `network.interface.out.errors-eth0` double,
+            `network.interface.out.errors-vlan100` double,
+            `network.interface.out.errors-int-maint` double,
+            `network.interface.out.errors-vlan-bear-gogo` double,
+            `network.interface.out.errors-bear-gogo` double,
+            `network.interface.out.errors-wlan0` double,
+            `network.interface.out.errors-wlan1` double,
+            `network.interface.out.errors-vlan102` double,
+            `network.interface.out.errors-vlan103` double,
+            `network.interface.out.errors-int-cabin` double,
+            `network.interface.out.errors-int-reserved` double,
+            `network.interface.out.errors-vlan104` double,
+            `network.interface.out.errors-vlan110` double,
+            `network.interface.out.errors-tunl0` double,
+            `network.interface.out.errors-e_portal-eth0` double,
+            `network.interface.out.errors-maint-eth0` double,
+            `network.interface.out.errors-pbx-eth0` double,
+            `network.interface.out.errors-vision-eth0` double,
+            `network.interface.out.errors-isionapi-eth0` double,
+            `network.interface.out.errors-fp3d-eth0` double,
+            `network.interface.out.errors-visiondl-eth0` double,
+            `network.interface.out.errors-drm-eth0` double,
+            `network.interface.out.errors-gamp-eth0` double,
+            `network.interface.out.errors-gamp-eth1` double,
+            `network.interface.out.errors-gamp-eth2` double,
+            `network.interface.out.errors-isionrss-eth0` double,
+            `network.interface.in.drops-lo` double,
+            `network.interface.in.drops-eth0` double,
+            `network.interface.in.drops-vlan100` double,
+            `network.interface.in.drops-int-maint` double,
+            `network.interface.in.drops-vlan-bear-gogo` double,
+            `network.interface.in.drops-bear-gogo` double,
+            `network.interface.in.drops-wlan0` double,
+            `network.interface.in.drops-wlan1` double,
+            `network.interface.in.drops-vlan102` double,
+            `network.interface.in.drops-vlan103` double,
+            `network.interface.in.drops-int-cabin` double,
+            `network.interface.in.drops-int-reserved` double,
+            `network.interface.in.drops-vlan104` double,
+            `network.interface.in.drops-vlan110` double,
+            `network.interface.in.drops-tunl0` double,
+            `network.interface.in.drops-e_portal-eth0` double,
+            `network.interface.in.drops-maint-eth0` double,
+            `network.interface.in.drops-pbx-eth0` double,
+            `network.interface.in.drops-vision-eth0` double,
+            `network.interface.in.drops-isionapi-eth0` double,
+            `network.interface.in.drops-fp3d-eth0` double,
+            `network.interface.in.drops-visiondl-eth0` double,
+            `network.interface.in.drops-drm-eth0` double,
+            `network.interface.in.drops-gamp-eth0` double,
+            `network.interface.in.drops-gamp-eth1` double,
+            `network.interface.in.drops-gamp-eth2` double,
+            `network.interface.in.drops-isionrss-eth0` double,
+            `network.interface.out.drops-lo` double,
+            `network.interface.out.drops-eth0` double,
+            `network.interface.out.drops-vlan100` double,
+            `network.interface.out.drops-int-maint` double,
+            `network.interface.out.drops-vlan-bear-gogo` double,
+            `network.interface.out.drops-bear-gogo` double,
+            `network.interface.out.drops-wlan0` double,
+            `network.interface.out.drops-wlan1` double,
+            `network.interface.out.drops-vlan102` double,
+            `network.interface.out.drops-vlan103` double,
+            `network.interface.out.drops-int-cabin` double,
+            `network.interface.out.drops-int-reserved` double,
+            `network.interface.out.drops-vlan104` double,
+            `network.interface.out.drops-vlan110` double,
+            `network.interface.out.drops-tunl0` double,
+            `network.interface.out.drops-e_portal-eth0` double,
+            `network.interface.out.drops-maint-eth0` double,
+            `network.interface.out.drops-pbx-eth0` double,
+            `network.interface.out.drops-vision-eth0` double,
+            `network.interface.out.drops-isionapi-eth0` double,
+            `network.interface.out.drops-fp3d-eth0` double,
+            `network.interface.out.drops-visiondl-eth0` double,
+            `network.interface.out.drops-drm-eth0` double,
+            `network.interface.out.drops-gamp-eth0` double,
+            `network.interface.out.drops-gamp-eth1` double,
+            `network.interface.out.drops-gamp-eth2` double,
+            `network.interface.out.drops-isionrss-eth0` double,
+            `network.interface.up-lo` double,
+            `network.interface.up-eth0` double,
+            `network.interface.up-vlan100` double,
+            `network.interface.up-int-maint` double,
+            `network.interface.up-vlan-bear-gogo` double,
+            `network.interface.up-bear-gogo` double,
+            `network.interface.up-wlan0` double,
+            `network.interface.up-wlan1` double,
+            `network.interface.up-vlan102` double,
+            `network.interface.up-vlan103` double,
+            `network.interface.up-int-cabin` double,
+            `network.interface.up-int-reserved` double,
+            `network.interface.up-vlan104` double,
+            `network.interface.up-vlan110` double,
+            `network.interface.up-tunl0` double,
+            `network.interface.up-e_portal-eth0` double,
+            `network.interface.up-maint-eth0` double,
+            `network.interface.up-pbx-eth0` double,
+            `network.interface.up-vision-eth0` double,
+            `network.interface.up-isionapi-eth0` double,
+            `network.interface.up-fp3d-eth0` double,
+            `network.interface.up-visiondl-eth0` double,
+            `network.interface.up-drm-eth0` double,
+            `network.interface.up-gamp-eth0` double,
+            `network.interface.up-gamp-eth1` double,
+            `network.interface.up-gamp-eth2` double,
+            `network.interface.up-isionrss-eth0` double,
+            `network.tcp.activeopens` double,
+            `network.tcp.currestab` double,
+            `network.tcp.insegs` double,
+            `network.tcp.outsegs` double,
+            `network.tcp.retranssegs` double,
+            `network.udp.indatagrams` double,
+            `network.udp.outdatagrams` double,
+            `network.ip.inreceives` double,
+            `network.softnet.dropped` double,
+            `kernel.all.nprocs` double,
+            `kernel.all.sysfork` double,
+            `kernel.all.lastpid` double,
+            `kernel.all.runnable` double,
+            `kernel.all.nusers` double,
+            `vfs.inodes.free` double,
+            `vfs.dentry.count` double,
+            `ipc.shm.tot` double,
+            `psoc.now.temp.psoc` double,
+            `psoc.now.temp.sensor1` double,
+            `psoc.now.vltg.12vbus` double,
+            `psoc.now.cur.12vbus` double,
+            `psoc.now.fan.rpm` double,
+            `psoc.now.status.power_led` double,
+            `psoc.past.status.powergoodhrs` double,
+            `__index_level_0__` bigint
         )
         PARTITIONED BY (
-            year STRING,
-            month STRING,
-            day STRING,
-            hour STRING,
-            product_type STRING,
-            serial_number STRING
+            `product_type` string,
+            `serial_number` string,
+            `year` string,
+            `month` string,
+            `day` string,
+            `hour` string
         )
         STORED AS PARQUET
-        LOCATION '{s3_location}'
-        TBLPROPERTIES ('parquet.compression'='SNAPPY')
+        LOCATION '{S3_DATA_LOCATION}'
+        TBLPROPERTIES (
+            'parquet.compression'='SNAPPY'
+        )
         """
 
         try:
@@ -542,7 +949,7 @@ class AthenaQueryExecutor:
             return False
 
     def repair_partitions(self):
-        """Discover and add all partitions from S3"""
+        """Discover and add all partitions from S3 (Step 3)"""
         print(f"🔧 Discovering partitions...")
 
         query = f"""
@@ -558,6 +965,114 @@ class AthenaQueryExecutor:
             print(f"⚠️  Warning: Partition repair failed: {e}")
             print("   (This is normal if no data has been uploaded yet)")
             return False
+
+    def show_partitions(self):
+        """Show all partitions in the table (Step 4)"""
+        print(f"📋 Showing partitions...")
+
+        query = f"""
+        SHOW PARTITIONS {self.database}.{self.table}
+        """
+
+        try:
+            query_id = self._execute_query(query)
+            result = self._wait_for_query(query_id)
+
+            # Get partition results
+            df = self._get_query_results(query_id)
+            if len(df) > 0:
+                print(f"✓ Found {len(df)} partitions:")
+                print(df.to_string())
+            else:
+                print(f"⚠️  No partitions found")
+            return True
+        except Exception as e:
+            print(f"⚠️  Warning: Show partitions failed: {e}")
+            return False
+
+    def run_sample_query(self, limit=5):
+        """Run sample query to check data (Step 5)"""
+        print(f"\n🔍 Running sample query...")
+
+        query = f"""
+        SELECT *
+        FROM {self.database}.{self.table}
+        LIMIT {limit}
+        """
+
+        try:
+            query_id = self._execute_query(query)
+            print(f"Query ID: {query_id}")
+            result = self._wait_for_query(query_id)
+
+            if result['QueryExecution']['Status']['State'] == 'SUCCEEDED':
+                df = self._get_query_results(query_id)
+                print(f"✓ Sample query completed: {len(df)} rows returned")
+                if len(df) > 0:
+                    print("\nSample Data Preview:")
+                    print("-" * 70)
+                    print(df.head().to_string())
+                return df
+            else:
+                print(f"✗ Sample query failed")
+                return None
+        except Exception as e:
+            print(f"⚠️  Warning: Sample query failed: {e}")
+            return None
+
+    def run_specific_metrics_query(self):
+        """Run specific metrics query with partition filters (Step 6)"""
+        print(f"\n🔍 Running specific metrics query...")
+
+        # Define specific metrics to query
+        metrics = [
+            '"kernel.all.load-1 minute"',
+            '"kernel.all.load-5 minute"',
+            '"kernel.all.load-15 minute"'
+        ]
+
+        # Query for data between specific partition ranges
+        query = f"""
+        SELECT {', '.join(metrics)}
+        FROM {self.database}.{self.table}
+        WHERE product_type = 'DEV_SW_05'
+          AND serial_number = '1234'
+          AND year = '2025'
+          AND month = '11'
+          AND day = '01'
+          AND hour >= '15'
+          AND hour <= '23'
+        LIMIT 10
+        """
+
+        try:
+            query_id = self._execute_query(query)
+            print(f"Query ID: {query_id}")
+            print(f"\nQuerying load metrics:")
+            print(f"  Product: DEV_SW_05")
+            print(f"  Serial: 1234")
+            print(f"  Date: 2025-11-01")
+            print(f"  Time range: hour 15 to 23")
+            print()
+
+            result = self._wait_for_query(query_id)
+
+            if result['QueryExecution']['Status']['State'] == 'SUCCEEDED':
+                df = self._get_query_results(query_id)
+                print(f"✓ Specific metrics query completed: {len(df)} rows returned")
+                if len(df) > 0:
+                    print("\nLoad Metrics Results:")
+                    print("-" * 70)
+                    print(df.to_string())
+                else:
+                    print("⚠️  No data found for specified filters")
+                return df
+            else:
+                print(f"✗ Specific metrics query failed")
+                return None
+        except Exception as e:
+            print(f"⚠️  Warning: Specific metrics query failed: {e}")
+            return None
 
     def query_metrics(self, start_time, end_time, product_type=None, serial_number=None,
                      metrics=None, limit=1000):
@@ -716,9 +1231,10 @@ class AthenaQueryExecutor:
         if results:
             df = pd.DataFrame(results, columns=columns)
 
-            # Convert timestamp column
+            # Convert timestamp column (stored as nanoseconds)
             if 'timestamp' in df.columns:
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                # Convert from nanoseconds to seconds first to avoid overflow
+                df['timestamp'] = pd.to_datetime(df['timestamp'].astype(float) / 1e9, unit='s', errors='coerce')
 
             # Convert numeric columns
             for col in df.columns:
@@ -833,22 +1349,54 @@ Examples:
     print("🚀 Setting up Athena database and table...")
     print()
 
+    # Step 1: Delete and create database
+    print("Step 1: Database Setup")
+    print("-" * 70)
+    executor.delete_database_if_exists()
     if not executor.create_database():
         print("Failed to create database")
         sys.exit(1)
+    print()
 
+    # Step 2: Delete and create table
+    print("Step 2: Table Setup")
+    print("-" * 70)
+    executor.delete_table_if_exists()
     if not executor.create_table():
         print("Failed to create table")
         sys.exit(1)
+    print()
 
-    # Discover partitions
+    # Step 3: Discover partitions
+    print("Step 3: Partition Discovery")
+    print("-" * 70)
     executor.repair_partitions()
+    print()
+
+    # Step 4: Show partitions
+    print("Step 4: Show Partitions")
+    print("-" * 70)
+    executor.show_partitions()
+    print()
 
     if args.setup_only:
-        print("\n✓ Setup complete!")
+        # Step 5: Run sample query
+        print("Step 5: Sample Query")
+        print("-" * 70)
+        executor.run_sample_query(limit=5)
+        print()
+
+        # Step 6: Run specific metrics query
+        print("Step 6: Specific Metrics Query")
+        print("-" * 70)
+        executor.run_specific_metrics_query()
+
+        print("\n" + "=" * 70)
+        print("✓ Setup complete!")
+        print("=" * 70)
         print(f"  Database: {ATHENA_DATABASE}")
         print(f"  Table: {ATHENA_TABLE}")
-        print(f"  Location: s3://{S3_BUCKET_NAME}/{S3_KEY_PREFIX}")
+        print(f"  Location: {S3_DATA_LOCATION}")
         sys.exit(0)
 
     # Query data

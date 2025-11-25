@@ -576,6 +576,7 @@ S3_BUCKET_NAME=pcp-metrics-parquet
 S3_KEY_PREFIX=time-series-data/
 AWS_REGION=us-east-1
 PARQUET_COMPRESSION=snappy
+# S3 Partitioning: product_type/serial_number/year/month/day/hour/
 ```
 
 ### Configuration Files

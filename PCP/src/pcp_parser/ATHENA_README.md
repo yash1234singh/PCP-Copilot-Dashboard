@@ -4,16 +4,57 @@ Complete guide for querying PCP metrics stored in S3 using AWS Athena and Glue.
 
 ## Table of Contents
 
-1. [Quick Start](#quick-start)
-2. [Understanding the Architecture](#understanding-the-architecture)
-3. [What is AWS Glue?](#what-is-aws-glue-data-catalog)
-4. [Setup Steps](#setup-steps-detailed)
-5. [IAM Permissions](#required-iam-permissions)
-6. [Using the Scripts](#using-the-scripts)
-7. [Athena Query Editor](#using-athena-query-editor)
-8. [Athena Notebooks](#using-athena-notebooks-not-recommended)
-9. [Troubleshooting](#troubleshooting)
-10. [Cost Optimization](#cost-considerations)
+1. [Overview](#overview)
+2. [Quick Start](#quick-start)
+3. [Understanding the Architecture](#understanding-the-architecture)
+4. [What is AWS Glue?](#what-is-aws-glue-data-catalog)
+5. [Setup Steps](#setup-steps-detailed)
+6. [IAM Permissions](#required-iam-permissions)
+7. [Using the Scripts](#using-the-scripts)
+8. [Athena Query Editor](#using-athena-query-editor)
+9. [Athena Notebooks](#using-athena-notebooks-not-recommended)
+10. [Troubleshooting](#troubleshooting)
+11. [Cost Optimization](#cost-considerations)
+
+---
+
+## Overview
+
+The Athena query system provides a complete workflow for querying PCP metrics data:
+
+### Automated Setup Process
+
+The script automatically executes these steps in order:
+
+**Step 0: Permission Check** (Optional)
+- Verify AWS IAM permissions for Athena, Glue, and S3
+- Use `--check-permissions` flag to run this check
+
+**Step 1: Database Setup**
+- Check if database `fst_pcp_data` exists, if yes delete it
+- Create fresh database `fst_pcp_data` with S3 location
+
+**Step 2: Table Setup**
+- Check if table `fst_pcp_data_table` exists, if yes delete it
+- Create fresh table with complete schema (395+ columns)
+- Uses Parquet format with SNAPPY compression
+
+**Step 3: Partition Discovery**
+- Run `MSCK REPAIR TABLE` to discover partitions from S3
+
+**Step 4: Show Partitions**
+- Display all discovered partitions for verification
+
+**Step 5: Sample Query**
+- Run a sample query to verify data is accessible
+
+### Key Features
+
+- **Clean Setup**: Automatically deletes and recreates database/table to avoid schema conflicts
+- **Complete Schema**: Includes all 395+ PCP metrics columns
+- **Standardized Location**: Uses dedicated S3 metrics path
+- **Automatic Verification**: Runs sample query to confirm setup
+- **Full Automation**: Single command setup and configuration
 
 ---
 
@@ -25,14 +66,14 @@ Complete guide for querying PCP metrics stored in S3 using AWS Athena and Glue.
 # From src/ directory
 cd src/
 
-# First time setup + query
-./query_athena.sh
+# Step 0: Check permissions first (recommended before first run)
+./query_athena.sh --check-permissions
 
-# Or setup only
+# Step 1-5: Setup database, table, and verify
 ./query_athena.sh --setup-only
 
-# Check permissions
-./query_athena.sh --check-permissions
+# Or: Complete workflow (setup + query)
+./query_athena.sh
 
 # Query with custom time range
 ./query_athena.sh --start-time "2025-11-01 00:00:00" --end-time "2025-11-30 23:59:59"
@@ -43,9 +84,10 @@ cd src/
 
 ### **Option 2: Using Athena Query Editor**
 
-1. Open AWS Console → Athena → Query Editor
-2. Run these 4 SQL commands (see [Athena Query Editor](#using-athena-query-editor))
-3. Start querying your data
+1. Verify permissions (see [IAM Permissions](#required-iam-permissions))
+2. Open AWS Console → Athena → Query Editor
+3. Run the 5 SQL setup commands (see [Athena Query Editor](#using-athena-query-editor))
+4. Start querying your data
 
 ---
 
@@ -146,17 +188,22 @@ Think of it like a library catalog:
 
 **SQL** (Run in Athena Query Editor):
 ```sql
-CREATE DATABASE IF NOT EXISTS pcp_metrics_db
-COMMENT 'PCP Metrics Database'
-LOCATION 's3://fst-pcp-data1/';
+-- Delete existing database if it exists
+DROP DATABASE IF EXISTS fst_pcp_data CASCADE;
+
+-- Create new database
+CREATE DATABASE IF NOT EXISTS fst_pcp_data
+COMMENT 'FST PCP Metrics Database'
+LOCATION 's3://fst-pcp-data1/metrics/pcp/';
 ```
 
 **What This Does**:
-- Creates logical database `pcp_metrics_db`
-- Associates it with S3 location
+- Deletes existing `fst_pcp_data` database (if exists)
+- Creates fresh logical database `fst_pcp_data`
+- Associates it with dedicated S3 metrics location
 - Does NOT move or copy any data
 
-**Verify**: AWS Glue Console → Databases → See `pcp_metrics_db`
+**Verify**: AWS Glue Console → Databases → See `fst_pcp_data`
 
 ---
 
@@ -166,57 +213,63 @@ LOCATION 's3://fst-pcp-data1/';
 
 **SQL** (Run in Athena Query Editor):
 ```sql
-CREATE EXTERNAL TABLE IF NOT EXISTS pcp_metrics_db.pcp_metrics (
-    -- Data columns (from Parquet files)
-    timestamp TIMESTAMP,
-    kernel_all_cpu_idle DOUBLE,
-    kernel_all_cpu_user DOUBLE,
-    kernel_all_cpu_sys DOUBLE,
-    kernel_all_cpu_nice DOUBLE,
-    kernel_all_cpu_wait_total DOUBLE,
-    kernel_all_cpu_irq_hard DOUBLE,
-    kernel_all_cpu_irq_soft DOUBLE,
-    kernel_all_cpu_steal DOUBLE,
-    kernel_all_cpu_guest DOUBLE,
-    mem_util_used DOUBLE,
-    mem_util_free DOUBLE,
-    mem_util_cached DOUBLE,
-    mem_util_buffers DOUBLE,
-    mem_util_shared DOUBLE,
-    mem_util_available DOUBLE,
-    disk_dev_read DOUBLE,
-    disk_dev_write DOUBLE,
-    disk_dev_read_bytes DOUBLE,
-    disk_dev_write_bytes DOUBLE,
-    network_interface_in_bytes DOUBLE,
-    network_interface_out_bytes DOUBLE,
-    network_interface_in_packets DOUBLE,
-    network_interface_out_packets DOUBLE,
-    network_interface_in_errors DOUBLE,
-    network_interface_out_errors DOUBLE
+-- Delete existing table if it exists
+DROP TABLE IF EXISTS fst_pcp_data.fst_pcp_data_table;
+
+-- Create new table with complete schema
+CREATE EXTERNAL TABLE IF NOT EXISTS fst_pcp_data.fst_pcp_data_table (
+    -- Data columns (from Parquet files) - 395+ metrics
+    `timestamp` bigint,
+    `hinv.ncpu` double,
+    `hinv.physmem` double,
+    `hinv.pagesize` double,
+    `hinv.ndisk` double,
+    `hinv.cpu.model_name-cpu0` string,
+    -- ... (see query_athena.py for complete schema with all 395+ columns)
+    `kernel.all.cpu.user` double,
+    `kernel.all.cpu.sys` double,
+    `kernel.all.cpu.idle` double,
+    `mem.util.used` double,
+    `mem.util.free` double,
+    `disk.all.read` double,
+    `disk.all.write` double,
+    `network.interface.in.bytes-eth0` double,
+    `network.interface.out.bytes-eth0` double,
+    -- ... (full schema includes all PCP metrics)
+    `__index_level_0__` bigint
 )
 PARTITIONED BY (
     -- Partition columns (from S3 folder structure)
-    year STRING,
-    month STRING,
-    day STRING,
-    hour STRING,
-    product_type STRING,
-    serial_number STRING
+    `year` string,
+    `month` string,
+    `day` string,
+    `hour` string,
+    `product_type` string,
+    `serial_number` string
 )
 STORED AS PARQUET
-LOCATION 's3://fst-pcp-data1/'
+LOCATION 's3://fst-pcp-data1/metrics/pcp/'
 TBLPROPERTIES ('parquet.compression'='SNAPPY');
 ```
 
+**Note**: The complete table schema with all 395+ columns is defined in `query_athena.py`. The schema includes:
+- Hardware inventory metrics (hinv.*)
+- CPU metrics (kernel.cpu.*, kernel.all.cpu.*)
+- Memory metrics (mem.*)
+- Disk metrics (disk.*)
+- Network metrics (network.*)
+- Filesystem metrics (filesys.*)
+- And many more...
+
 **What This Does**:
-- Defines table schema
-- Maps to S3 location
-- Specifies Parquet format
+- Deletes existing `fst_pcp_data_table` (if exists)
+- Defines complete table schema with all PCP metrics
+- Maps to dedicated S3 metrics location
+- Specifies Parquet format with SNAPPY compression
 - Defines partition structure
 - Registers in Glue Catalog
 
-**Verify**: AWS Glue Console → Tables → See `pcp_metrics`
+**Verify**: AWS Glue Console → Tables → See `fst_pcp_data_table`
 
 ---
 
@@ -228,36 +281,56 @@ TBLPROPERTIES ('parquet.compression'='SNAPPY');
 
 **SQL** (Run in Athena Query Editor):
 ```sql
-MSCK REPAIR TABLE pcp_metrics_db.pcp_metrics;
+MSCK REPAIR TABLE fst_pcp_data.fst_pcp_data_table;
 ```
 
 **What This Does**:
-- Scans S3 bucket
+- Scans S3 bucket at `s3://fst-pcp-data1/metrics/pcp/`
 - Finds folders matching `year=X/month=Y/day=Z/...`
 - Registers each combination as a partition
 - Returns: "Partitions not in metastore: N"
 
-**Verify**: AWS Glue Console → Tables → pcp_metrics → Partitions tab
+**Verify**: AWS Glue Console → Tables → fst_pcp_data_table → Partitions tab
 
 ---
 
-### **Step 4: Query Data**
+### **Step 4: Show Partitions**
+
+**What**: Display all discovered partitions
+
+**SQL** (Run in Athena Query Editor):
+```sql
+SHOW PARTITIONS fst_pcp_data.fst_pcp_data_table;
+```
+
+**What This Does**:
+- Lists all partitions discovered in Step 3
+- Helps verify that data was properly discovered
+
+---
+
+### **Step 5: Query Data**
 
 **What**: Use SQL to query your Parquet files
 
 **SQL** (Run in Athena Query Editor):
 ```sql
+-- Sample query to check data
+SELECT *
+FROM fst_pcp_data.fst_pcp_data_table
+LIMIT 10;
+
+-- Filtered query with specific metrics
 SELECT
-    timestamp,
-    kernel_all_cpu_idle,
-    kernel_all_cpu_user,
-    mem_util_used,
-    mem_util_free
-FROM pcp_metrics_db.pcp_metrics
+    `timestamp`,
+    `kernel.all.cpu.idle`,
+    `kernel.all.cpu.user`,
+    `mem.util.used`,
+    `mem.util.free`
+FROM fst_pcp_data.fst_pcp_data_table
 WHERE product_type = 'SW_DEV_11'
   AND serial_number = '1235678'
-  AND timestamp >= TIMESTAMP '2025-11-01 00:00:00'
-ORDER BY timestamp DESC
+ORDER BY `timestamp` DESC
 LIMIT 100;
 ```
 
@@ -266,6 +339,8 @@ LIMIT 100;
 2. Uses partition filters to find relevant S3 folders
 3. Reads only matching Parquet files
 4. Returns results
+
+**Note**: Column names use backticks because they contain special characters (dots, dashes)
 
 ---
 
@@ -413,6 +488,12 @@ AWS_REGION = 'us-west-2'
 S3_BUCKET_NAME = 'fst-pcp-data1'
 S3_KEY_PREFIX = ''
 
+# Athena Configuration
+ATHENA_DATABASE = 'fst_pcp_data'
+ATHENA_TABLE = 'fst_pcp_data_table'
+ATHENA_OUTPUT_LOCATION = 's3://fst-pcp-data1/athena-results/'
+S3_DATA_LOCATION = 's3://fst-pcp-data1/metrics/pcp/'
+
 # Query Filters
 PRODUCT_TYPE = 'SW_DEV_11'
 SERIAL_NUMBER = '1235678'
@@ -421,13 +502,13 @@ SERIAL_NUMBER = '1235678'
 DEFAULT_START_TIME = (datetime.now() - timedelta(days=7))
 DEFAULT_END_TIME = datetime.now()
 
-# Metrics to query
+# Metrics to query (use backticks for special characters)
 METRICS_TO_QUERY = [
     'timestamp',
-    'kernel_all_cpu_idle',
-    'kernel_all_cpu_user',
-    'mem_util_used',
-    'mem_util_free'
+    'kernel.all.cpu.idle',
+    'kernel.all.cpu.user',
+    'mem.util.used',
+    'mem.util.free'
 ]
 ```
 
@@ -482,50 +563,77 @@ Tests all required AWS permissions.
 ### **Step 2: Create Database**
 
 ```sql
-CREATE DATABASE IF NOT EXISTS pcp_metrics_db;
+-- Drop existing database if it exists
+DROP DATABASE IF EXISTS fst_pcp_data CASCADE;
+
+-- Create new database
+CREATE DATABASE IF NOT EXISTS fst_pcp_data
+COMMENT 'FST PCP Metrics Database'
+LOCATION 's3://fst-pcp-data1/metrics/pcp/';
 ```
 Click **"Run"**
 
 ### **Step 3: Create Table**
 
+**Note**: The complete schema with 395+ columns is in `query_athena.py`. Here's a simplified version:
+
 ```sql
-CREATE EXTERNAL TABLE IF NOT EXISTS pcp_metrics_db.pcp_metrics (
-    timestamp TIMESTAMP,
-    kernel_all_cpu_idle DOUBLE,
-    kernel_all_cpu_user DOUBLE,
-    mem_util_used DOUBLE,
-    mem_util_free DOUBLE,
-    disk_dev_read DOUBLE,
-    disk_dev_write DOUBLE
+-- Drop existing table if it exists
+DROP TABLE IF EXISTS fst_pcp_data.fst_pcp_data_table;
+
+-- Create new table (simplified - see query_athena.py for complete schema)
+CREATE EXTERNAL TABLE IF NOT EXISTS fst_pcp_data.fst_pcp_data_table (
+    `timestamp` bigint,
+    `kernel.all.cpu.idle` DOUBLE,
+    `kernel.all.cpu.user` DOUBLE,
+    `mem.util.used` DOUBLE,
+    `mem.util.free` DOUBLE,
+    -- ... (395+ columns total, see query_athena.py for complete schema)
+    `__index_level_0__` bigint
 )
 PARTITIONED BY (
-    year STRING, month STRING, day STRING, hour STRING,
-    product_type STRING, serial_number STRING
+    `year` STRING, `month` STRING, `day` STRING, `hour` STRING,
+    `product_type` STRING, `serial_number` STRING
 )
 STORED AS PARQUET
-LOCATION 's3://fst-pcp-data1/'
+LOCATION 's3://fst-pcp-data1/metrics/pcp/'
 TBLPROPERTIES ('parquet.compression'='SNAPPY');
 ```
 Click **"Run"**
 
+**Recommendation**: Use `query_athena.py` script instead of manual SQL for the complete schema.
+
 ### **Step 4: Discover Partitions**
 
 ```sql
-MSCK REPAIR TABLE pcp_metrics_db.pcp_metrics;
+MSCK REPAIR TABLE fst_pcp_data.fst_pcp_data_table;
 ```
 Click **"Run"**
 
-### **Step 5: Query Data**
+### **Step 5: Show Partitions**
 
 ```sql
+SHOW PARTITIONS fst_pcp_data.fst_pcp_data_table;
+```
+Click **"Run"**
+
+### **Step 6: Query Data**
+
+```sql
+-- Sample query
+SELECT *
+FROM fst_pcp_data.fst_pcp_data_table
+LIMIT 10;
+
+-- Filtered query with specific metrics
 SELECT
-    timestamp,
-    kernel_all_cpu_idle,
-    mem_util_used
-FROM pcp_metrics_db.pcp_metrics
+    `timestamp`,
+    `kernel.all.cpu.idle`,
+    `mem.util.used`
+FROM fst_pcp_data.fst_pcp_data_table
 WHERE product_type = 'SW_DEV_11'
   AND serial_number = '1235678'
-ORDER BY timestamp DESC
+ORDER BY `timestamp` DESC
 LIMIT 100;
 ```
 Click **"Run"**
@@ -534,27 +642,15 @@ Click **"Run"**
 
 **Check partitions**:
 ```sql
-SHOW PARTITIONS pcp_metrics_db.pcp_metrics;
+SHOW PARTITIONS fst_pcp_data.fst_pcp_data_table;
 ```
 
 **Count rows**:
 ```sql
-SELECT COUNT(*) FROM pcp_metrics_db.pcp_metrics;
+SELECT COUNT(*) FROM fst_pcp_data.fst_pcp_data_table;
 ```
 
-**Hourly aggregates**:
-```sql
-SELECT
-    DATE_TRUNC('hour', timestamp) as hour,
-    AVG(kernel_all_cpu_idle) as avg_cpu_idle,
-    AVG(mem_util_used) as avg_memory,
-    COUNT(*) as samples
-FROM pcp_metrics_db.pcp_metrics
-WHERE product_type = 'SW_DEV_11'
-GROUP BY DATE_TRUNC('hour', timestamp)
-ORDER BY hour DESC
-LIMIT 24;
-```
+**Note**: Use backticks (`) for column names with special characters (dots, dashes)
 
 ---
 
@@ -567,7 +663,7 @@ If you must use Notebooks, use `%%sql` magic:
 ```sql
 %%sql
 
-SELECT * FROM pcp_metrics_db.pcp_metrics LIMIT 100
+SELECT * FROM fst_pcp_data.fst_pcp_data_table LIMIT 100
 ```
 
 See [athena_notebook_simple.md](athena_notebook_simple.md) for details.
@@ -609,12 +705,12 @@ AccessDeniedException: You are not authorized to perform: athena:StartQueryExecu
 
 1. **No partitions discovered**
    ```sql
-   MSCK REPAIR TABLE pcp_metrics_db.pcp_metrics;
-   SHOW PARTITIONS pcp_metrics_db.pcp_metrics;
+   MSCK REPAIR TABLE fst_pcp_data.fst_pcp_data_table;
+   SHOW PARTITIONS fst_pcp_data.fst_pcp_data_table;
    ```
 
 2. **No data in S3**
-   - Check: AWS S3 Console → `fst-pcp-data1`
+   - Check: AWS S3 Console → `fst-pcp-data1` → `metrics/pcp/`
    - Ensure `ENABLE_S3_EXPORT=true` in docker-compose.yml
    - Process PCP archives to generate data
 
@@ -628,10 +724,15 @@ AccessDeniedException: You are not authorized to perform: athena:StartQueryExecu
 
 **Cause**: Table schema doesn't match Parquet file structure
 
-**Fix**: Drop and recreate table
+**Fix**: Drop and recreate table (the script does this automatically)
 ```sql
-DROP TABLE pcp_metrics_db.pcp_metrics;
--- Then run CREATE TABLE again
+DROP TABLE fst_pcp_data.fst_pcp_data_table;
+-- Then run CREATE TABLE again with complete schema
+```
+
+Or run the script which handles this automatically:
+```bash
+./query_athena.sh --setup-only
 ```
 
 ---
@@ -644,13 +745,13 @@ DROP TABLE pcp_metrics_db.pcp_metrics;
    ```sql
    WHERE product_type = 'SW_DEV_11'  -- Partition filter
      AND serial_number = '1235678'    -- Partition filter
-     AND timestamp >= '2025-11-01'
+     AND `timestamp` >= 1638316800    -- Filter on timestamp
    ```
 
 2. **Limit columns**:
    ```sql
-   SELECT timestamp, kernel_all_cpu_idle  -- Only needed columns
-   FROM pcp_metrics_db.pcp_metrics
+   SELECT `timestamp`, `kernel.all.cpu.idle`  -- Only needed columns
+   FROM fst_pcp_data.fst_pcp_data_table
    ```
 
 3. **Use LIMIT**:
@@ -661,6 +762,10 @@ DROP TABLE pcp_metrics_db.pcp_metrics;
 4. **Check data scanned**:
    - Athena Query Editor shows "Data scanned" after query
    - Lower is better (and cheaper)
+
+5. **Use backticks for column names**:
+   - Always use backticks for columns with dots or dashes
+   - Example: `` `kernel.all.cpu.idle` ``
 
 ---
 
@@ -693,11 +798,26 @@ DROP TABLE pcp_metrics_db.pcp_metrics;
 ### **One-Time Setup**
 
 ```bash
-# Option A: Use script (easiest)
+# Option A: Use script (easiest - recommended)
+
+# First: Check permissions
+python3 query_athena.py --check-permissions
+# or
+./query_athena.sh --check-permissions
+
+# Then: Run setup
 ./query_athena.sh --setup-only
 
+# This automatically runs all 5 setup steps:
+# 1. Delete and create database
+# 2. Delete and create table with full schema
+# 3. Discover partitions (MSCK REPAIR)
+# 4. Show partitions
+# 5. Run sample query
+
 # Option B: Use Athena Query Editor
-# Run 3 SQL commands: CREATE DATABASE, CREATE TABLE, MSCK REPAIR
+# First verify IAM permissions, then run SQL commands manually
+# (see "Using Athena Query Editor" section)
 ```
 
 ### **Query Data**
@@ -717,7 +837,7 @@ DROP TABLE pcp_metrics_db.pcp_metrics;
 
 ```bash
 # Discover new partitions
-./query_athena.sh --setup-only  # Runs MSCK REPAIR TABLE
+./query_athena.sh --setup-only  # Runs complete setup including MSCK REPAIR TABLE
 ```
 
 ---
@@ -735,13 +855,24 @@ DROP TABLE pcp_metrics_db.pcp_metrics;
 
 ## Quick Reference
 
-**IAM User**: `arn:aws:iam::236132924050:user/pcp-data`
-**AWS Region**: `us-west-2`
-**S3 Bucket**: `fst-pcp-data1`
-**Database**: `pcp_metrics_db`
-**Table**: `pcp_metrics`
+**Configuration**:
+- **IAM User**: `arn:aws:iam::236132924050:user/pcp-data`
+- **AWS Region**: `us-west-2`
+- **S3 Bucket**: `fst-pcp-data1`
+- **S3 Data Location**: `s3://fst-pcp-data1/metrics/pcp/`
+- **S3 Results Location**: `s3://fst-pcp-data1/athena-results/`
+- **Database**: `fst_pcp_data`
+- **Table**: `fst_pcp_data_table`
+- **Schema**: 395+ PCP metrics columns
+- **Format**: Parquet with SNAPPY compression
 
 **Required Permissions**: 14 total (5 Athena + 8 Glue + 5 S3)
+
+**Key Points**:
+- Use backticks for column names with special characters
+- Database and table are automatically dropped and recreated on setup
+- Complete schema includes all PCP metrics
+- Dedicated S3 locations for data and query results
 
 ---
 
@@ -764,4 +895,3 @@ DROP TABLE pcp_metrics_db.pcp_metrics;
 
 ---
 
-**You're all set! Run `./query_athena.sh` to start querying your PCP metrics data.** 🎉

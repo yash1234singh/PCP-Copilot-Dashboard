@@ -125,7 +125,7 @@ class S3ParquetExporter:
         """
         Add partition columns to DataFrame for S3 partitioning
 
-        Partition structure: year/month/day/hour/product_type/serial_number/
+        Partition structure: product_type/serial_number/year/month/day/hour/
 
         Args:
             df: DataFrame with timestamp column
@@ -187,7 +187,7 @@ class S3ParquetExporter:
         """
         Generate S3 key with Hive-style partitioning
 
-        Format: s3://bucket/prefix/year=2025/month=11/day=13/hour=14/product_type=SERVER1/serial_number=1234/data.parquet
+        Format: s3://bucket/prefix/product_type=SERVER1/serial_number=1234/year=2025/month=11/day=13/hour=14/data.parquet
 
         Args:
             partition_values: Dictionary with partition column values
@@ -197,12 +197,12 @@ class S3ParquetExporter:
         """
         # Build Hive-style partition path
         partition_path = "/".join([
+            f"product_type={partition_values['product_type']}",
+            f"serial_number={partition_values['serial_number']}",
             f"year={partition_values['year']}",
             f"month={partition_values['month']}",
             f"day={partition_values['day']}",
-            f"hour={partition_values['hour']}",
-            f"product_type={partition_values['product_type']}",
-            f"serial_number={partition_values['serial_number']}"
+            f"hour={partition_values['hour']}"
         ])
 
         # Generate filename with timestamp
@@ -307,7 +307,7 @@ class S3ParquetExporter:
             df = self.add_partition_columns(df)
 
             # Step 3: Group by partition and export
-            partition_cols = ['year', 'month', 'day', 'hour', 'product_type', 'serial_number']
+            partition_cols = ['product_type', 'serial_number', 'year', 'month', 'day', 'hour']
 
             # Group by all partition columns
             grouped = df.groupby(partition_cols, as_index=False)
